@@ -175,6 +175,176 @@ $refresh.Add_Click({
 
 $viewMenu.DropDownItems.Add($refresh)
 
+# Create Sort Menu Button
+$sortMenu = New-Object System.Windows.Forms.ToolStripDropDownButton
+$sortMenu.Text = "Sort"
+$sortMenu.DisplayStyle = [System.Windows.Forms.ToolStripItemDisplayStyle]::Text
+
+# Create Sort Options Menu Items
+$sortByName = New-Object System.Windows.Forms.ToolStripMenuItem
+$sortByName.Text = "Name"
+$sortByName.Checked = $true
+$global:currentSortColumn = "Name"
+$global:sortAscending = $true
+
+$sortByType = New-Object System.Windows.Forms.ToolStripMenuItem
+$sortByType.Text = "Type"
+
+$sortByDateModified = New-Object System.Windows.Forms.ToolStripMenuItem
+$sortByDateModified.Text = "Date modified"
+
+$sortBySize = New-Object System.Windows.Forms.ToolStripMenuItem
+$sortBySize.Text = "Size"
+
+# Create Sort Direction Options
+$separator = New-Object System.Windows.Forms.ToolStripSeparator
+$ascending = New-Object System.Windows.Forms.ToolStripMenuItem
+$ascending.Text = "Ascending"
+$ascending.Checked = $true
+
+$descending = New-Object System.Windows.Forms.ToolStripMenuItem
+$descending.Text = "Descending"
+
+# Add items to Sort menu
+$sortMenu.DropDownItems.AddRange(@(
+    $sortByName,
+    $sortByType,
+    $sortByDateModified,
+    $sortBySize,
+    $separator,
+    $ascending,
+    $descending
+))
+
+# Add Sort menu to MenuStrip (after View menu)
+$menuStrip.Items.Add($sortMenu)
+
+# Function to update sort checks
+function Update-SortChecks {
+    param($selectedItem)
+    
+    $sortByName.Checked = $false
+    $sortByType.Checked = $false
+    $sortByDateModified.Checked = $false
+    $sortBySize.Checked = $false
+    
+    $selectedItem.Checked = $true
+    $global:currentSortColumn = $selectedItem.Text
+}
+
+# Function to update direction checks
+function Update-DirectionChecks {
+    param($isAscending)
+    
+    $ascending.Checked = $isAscending
+    $descending.Checked = -not $isAscending
+    $global:sortAscending = $isAscending
+}
+
+# Function to sort ListView items
+function Sort-ListView {
+    param (
+        [string]$column,
+        [bool]$ascending
+    )
+    
+    $items = @($listView.Items)
+    
+    switch ($column) {
+        "Name" {
+            $sorted = if ($ascending) {
+                $items | Sort-Object { $_.Text }
+            } else {
+                $items | Sort-Object { $_.Text } -Descending
+            }
+        }
+        "Type" {
+            $sorted = if ($ascending) {
+                $items | Sort-Object { $_.SubItems[1].Text }
+            } else {
+                $items | Sort-Object { $_.SubItems[1].Text } -Descending
+            }
+        }
+        "Date modified" {
+            $sorted = if ($ascending) {
+                $items | Sort-Object { [DateTime]::Parse($_.SubItems[3].Text) }
+            } else {
+                $items | Sort-Object { [DateTime]::Parse($_.SubItems[3].Text) } -Descending
+            }
+        }
+        "Size" {
+            $sorted = if ($ascending) {
+                $items | Sort-Object {
+                    if ($_.SubItems[2].Text -eq "") { 0 }
+                    else {
+                        $size = $_.SubItems[2].Text
+                        switch -Regex ($size) {
+                            "(\d+\.?\d*)\s*B" { [double]$matches[1] }
+                            "(\d+\.?\d*)\s*KB" { [double]$matches[1] * 1KB }
+                            "(\d+\.?\d*)\s*MB" { [double]$matches[1] * 1MB }
+                            "(\d+\.?\d*)\s*GB" { [double]$matches[1] * 1GB }
+                            "(\d+\.?\d*)\s*TB" { [double]$matches[1] * 1TB }
+                            default { 0 }
+                        }
+                    }
+                }
+            } else {
+                $items | Sort-Object {
+                    if ($_.SubItems[2].Text -eq "") { 0 }
+                    else {
+                        $size = $_.SubItems[2].Text
+                        switch -Regex ($size) {
+                            "(\d+\.?\d*)\s*B" { [double]$matches[1] }
+                            "(\d+\.?\d*)\s*KB" { [double]$matches[1] * 1KB }
+                            "(\d+\.?\d*)\s*MB" { [double]$matches[1] * 1MB }
+                            "(\d+\.?\d*)\s*GB" { [double]$matches[1] * 1GB }
+                            "(\d+\.?\d*)\s*TB" { [double]$matches[1] * 1TB }
+                            default { 0 }
+                        }
+                    }
+                } -Descending
+            }
+        }
+    }
+    
+    $listView.BeginUpdate()
+    $listView.Items.Clear()
+    $listView.Items.AddRange($sorted)
+    $listView.EndUpdate()
+}
+
+# Event handlers for sort options
+$sortByName.Add_Click({
+    Update-SortChecks $sortByName
+    Sort-ListView "Name" $global:sortAscending
+})
+
+$sortByType.Add_Click({
+    Update-SortChecks $sortByType
+    Sort-ListView "Type" $global:sortAscending
+})
+
+$sortByDateModified.Add_Click({
+    Update-SortChecks $sortByDateModified
+    Sort-ListView "Date modified" $global:sortAscending
+})
+
+$sortBySize.Add_Click({
+    Update-SortChecks $sortBySize
+    Sort-ListView "Size" $global:sortAscending
+})
+
+# Event handlers for sort direction
+$ascending.Add_Click({
+    Update-DirectionChecks $true
+    Sort-ListView $global:currentSortColumn $true
+})
+
+$descending.Add_Click({
+    Update-DirectionChecks $false
+    Sort-ListView $global:currentSortColumn $false
+})
+
 # Create Navigation Buttons
 $btnBack = New-Object System.Windows.Forms.ToolStripMenuItem
 $btnBack.Text = "←"
@@ -209,30 +379,8 @@ $btnUp.Add_Click({
     }
 })
 
-$btnDown = New-Object System.Windows.Forms.ToolStripMenuItem
-$btnDown.Text = "↓"
-$btnDown.Add_Click({
-    if ($listView.SelectedItems.Count -gt 0) {
-        $selectedItem = $listView.SelectedItems[0]
-        if ($selectedItem -and (Test-Path -Path $selectedItem.Tag -PathType Container)) {
-            Navigate-To $selectedItem.Tag
-        }
-    }
-})
-
-$btnDown = New-Object System.Windows.Forms.ToolStripMenuItem
-$btnDown.Text = "↓"
-$btnDown.Add_Click({
-    if ($listView.SelectedItems.Count -gt 0) {
-        $selectedItem = $listView.SelectedItems[0]
-        if ($selectedItem -and (Test-Path -Path $selectedItem.Tag -PathType Container)) {
-            Navigate-To $selectedItem.Tag
-        }
-    }
-})
-
 # Add all items to MenuStrip in order
-$menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu, $btnBack, $btnForward, $btnUp, $btnDown))
+$menuStrip.Items.AddRange(@($btnBack, $btnForward, $btnUp, $fileMenu, $sortMenu, $editMenu, $viewMen ))
 
 # Create address bar in MenuStrip
 $addressBar = New-Object System.Windows.Forms.ToolStripTextBox
@@ -400,8 +548,6 @@ function Update-NavigationButtons {
     $btnBack.Enabled = $global:currentIndex -gt 0
     $btnForward.Enabled = $global:currentIndex -lt ($global:navigationHistory.Count - 1)
     $btnUp.Enabled = (Split-Path $global:currentPath -Parent) -ne $null
-    $btnDown.Enabled = ($listView.SelectedItems.Count -gt 0) -and 
-                      (Test-Path -Path $listView.SelectedItems[0].Tag -PathType Container)
 }
 
 # Function to handle navigation
@@ -1352,6 +1498,7 @@ Populate-TreeView
 # Initial ListView population (using Desktop path from environment variable)
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 Populate-ListView -path $desktopPath
+
 
 
 # =====================================================================================
