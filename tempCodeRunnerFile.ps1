@@ -1,4 +1,4 @@
-﻿# Import required assemblies
+# Import required assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
@@ -11,6 +11,7 @@ $form.BackColor = [System.Drawing.Color]::LightGray
 
 # Create MenuStrip
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
+$menuStrip.Dock = [System.Windows.Forms.DockStyle]::Top
 $form.Controls.Add($menuStrip)
 
 # File Menu
@@ -100,32 +101,43 @@ $viewMenu.DropDownItems.Add($refresh)
 # Add menus to MenuStrip
 $menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu))
 
-# Create Quick Access panel with increased height (adjusted for MenuStrip)
+# Create main horizontal SplitContainer
+$mainSplitContainer = New-Object System.Windows.Forms.SplitContainer
+$mainSplitContainer.Dock = [System.Windows.Forms.DockStyle]::Fill
+$mainSplitContainer.Orientation = [System.Windows.Forms.Orientation]::Horizontal
+$mainSplitContainer.Panel1MinSize = 30  # Height for the quick panel area
+$mainSplitContainer.Panel2MinSize = 200  # Minimum height for the file view area
+$form.Controls.Add($mainSplitContainer)
+
+# Create horizontal SplitContainer for the bottom panel
+$bottomSplitContainer = New-Object System.Windows.Forms.SplitContainer
+$bottomSplitContainer.Dock = [System.Windows.Forms.DockStyle]::Fill
+$bottomSplitContainer.Orientation = [System.Windows.Forms.Orientation]::Vertical
+$bottomSplitContainer.Panel1MinSize = 200  # Minimum width for the tree view
+$bottomSplitContainer.Panel2MinSize = 400  # Minimum width for the list view
+$mainSplitContainer.Panel2.Controls.Add($bottomSplitContainer)
+
+# Create Quick Access Panel (Top Panel)
 $quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$quickAccessPanel.Size = New-Object System.Drawing.Size(250, 220)
-$quickAccessPanel.Location = New-Object System.Drawing.Point(10, 50)  # Adjusted Y position
-$quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+$quickAccessPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
 $quickAccessPanel.WrapContents = $false
-$quickAccessPanel.AutoSize = $false
-$form.Controls.Add($quickAccessPanel)
+$quickAccessPanel.AutoScroll = $true
+$mainSplitContainer.Panel1.Controls.Add($quickAccessPanel)
 
-# Create a TreeView to display directories (left side)
+# Create TreeView (Bottom Left Panel)
 $treeView = New-Object System.Windows.Forms.TreeView
-$treeView.Size = New-Object System.Drawing.Size(250, 290)
-$treeView.Location = New-Object System.Drawing.Point(10, 270)  # Adjusted Y position
-$treeView.Scrollable = $true
-$form.Controls.Add($treeView)
+$treeView.Dock = [System.Windows.Forms.DockStyle]::Fill
+$bottomSplitContainer.Panel1.Controls.Add($treeView)
 
-# Create a ListView to display files (right side)
+# Create ListView (Bottom Right Panel)
 $listView = New-Object System.Windows.Forms.ListView
-$listView.Size = New-Object System.Drawing.Size(600, 510)
-$listView.Location = New-Object System.Drawing.Point(270, 50)  # Adjusted Y position
+$listView.Dock = [System.Windows.Forms.DockStyle]::Fill
 $listView.View = [System.Windows.Forms.View]::Details
 $listView.FullRowSelect = $true
 $listView.GridLines = $true
-$form.Controls.Add($listView)
+$bottomSplitContainer.Panel2.Controls.Add($listView)
 
-# Rest of your original code remains exactly the same from here
 # Add columns to ListView
 $columns = @(
     @{Name="Name"; Width=250},
@@ -136,6 +148,39 @@ $columns = @(
 
 foreach ($column in $columns) {
     $listView.Columns.Add($column.Name, $column.Width)
+}
+
+# Function to create Quick Access buttons
+function Add-QuickAccessButton($text, $path) {
+    $button = New-Object System.Windows.Forms.Button
+    $button.Text = $text
+    $button.Width = 100
+    $button.Height = 25
+    $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $button.Margin = New-Object System.Windows.Forms.Padding(2)
+    $button.Tag = $path
+    
+    $button.Add_Click({
+        if (Test-Path -Path $this.Tag) {
+            Populate-ListView -path $this.Tag
+        }
+    })
+    
+    $quickAccessPanel.Controls.Add($button)
+}
+
+# Add Quick Access buttons
+$quickAccessPaths = @{
+    "Desktop" = [Environment]::GetFolderPath("Desktop")
+    "Downloads" = [Environment]::GetFolderPath("UserProfile") + "\Downloads"
+    "Documents" = [Environment]::GetFolderPath("MyDocuments")
+    "Music" = [Environment]::GetFolderPath("MyMusic")
+    "Pictures" = [Environment]::GetFolderPath("MyPictures")
+    "Videos" = [Environment]::GetFolderPath("MyVideos")
+}
+
+foreach ($path in $quickAccessPaths.GetEnumerator()) {
+    Add-QuickAccessButton $path.Key $path.Value
 }
 
 # Function to format file size
@@ -156,13 +201,11 @@ function Populate-ListView {
     $listView.Items.Clear()
     
     try {
-        # Get all items in the directory
         $items = Get-ChildItem -Path $path -ErrorAction Stop
         
         foreach ($item in $items) {
             $listViewItem = New-Object System.Windows.Forms.ListViewItem($item.Name)
             
-            # Set item type and size
             if ($item.PSIsContainer) {
                 $type = "Folder"
                 $size = ""
@@ -171,12 +214,9 @@ function Populate-ListView {
                 $size = Format-FileSize $item.Length
             }
             
-            # Add subitems
             $listViewItem.SubItems.Add($type)
             $listViewItem.SubItems.Add($size)
             $listViewItem.SubItems.Add($item.LastWriteTime.ToString("g"))
-            
-            # Store the full path in the Tag property
             $listViewItem.Tag = $item.FullName
             
             $listView.Items.Add($listViewItem)
@@ -192,55 +232,11 @@ function Populate-ListView {
     }
 }
 
-# Function to create Quick Access buttons
-function Add-QuickAccessButton($text, $path) {
-    $button = New-Object System.Windows.Forms.Button
-    $button.Text = $text
-    $button.Width = 240
-    $button.Height = 30
-    $button.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    
-    # Store the path in the button's Tag property
-    $button.Tag = $path
-    
-    $button.Add_Click({
-        $buttonPath = $this.Tag
-        if (Test-Path -Path $buttonPath) {
-            Populate-ListView -path $buttonPath
-        } else {
-            [System.Windows.Forms.MessageBox]::Show(
-                "Path does not exist: $buttonPath",
-                "Error",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Error
-            )
-        }
-    })
-    
-    $quickAccessPanel.Controls.Add($button)
-    return $button
-}
-
-# Add Quick Access buttons with paths using environment variables
-$quickAccessButtons = @{
-    "Desktop" = [Environment]::GetFolderPath("Desktop")
-    "Downloads" = [Environment]::GetFolderPath("UserProfile") + "\Downloads"
-    "Documents" = [Environment]::GetFolderPath("MyDocuments")
-    "Music" = [Environment]::GetFolderPath("MyMusic")
-    "Pictures" = [Environment]::GetFolderPath("MyPictures")
-    "Videos" = [Environment]::GetFolderPath("MyVideos")
-}
-
-foreach ($button in $quickAccessButtons.GetEnumerator()) {
-    Add-QuickAccessButton $button.Key $button.Value
-}
-
 # Function to populate the TreeView
 function Populate-TreeView {
     $treeView.Nodes.Clear()
     
-    # Add "This PC" node
+    # Add This PC node
     $thisPC = $treeView.Nodes.Add("This PC")
     
     # Get all drives
@@ -258,7 +254,7 @@ function Populate-TreeView {
     $thisPC.Expand()
 }
 
-# Event handler for TreeView node click
+# Event handlers
 $treeView.add_AfterSelect({
     $selectedNode = $treeView.SelectedNode
     if ($selectedNode.Tag) {
@@ -266,7 +262,6 @@ $treeView.add_AfterSelect({
     }
 })
 
-# Event handler for ListView double-click
 $listView.add_DoubleClick({
     $selectedItem = $listView.SelectedItems[0]
     if ($selectedItem) {
@@ -280,12 +275,25 @@ $listView.add_DoubleClick({
     }
 })
 
-# Initial TreeView population
-Populate-TreeView
+# Set initial split distances
+$mainSplitContainer.SplitterDistance = 35  # Height for quick access panel
+$bottomSplitContainer.SplitterDistance = 250  # Width for tree view
 
-# Initial ListView population (using Desktop path from environment variable)
+# Initial population
+Populate-TreeView
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 Populate-ListView -path $desktopPath
+
+# Add resize event handler to adjust column widths
+$form.Add_Resize({
+    if ($listView.Columns.Count -gt 0) {
+        $totalWidth = $listView.ClientSize.Width
+        $lastColumnWidth = $totalWidth - ($listView.Columns[0].Width + $listView.Columns[1].Width + $listView.Columns[2].Width)
+        if ($lastColumnWidth -gt 150) {
+            $listView.Columns[3].Width = $lastColumnWidth
+        }
+    }
+})
 
 # Show the form
 [void]$form.ShowDialog()

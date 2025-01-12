@@ -11,8 +11,11 @@ $form.BackColor = [System.Drawing.Color]::LightGray
 
 # Create MenuStrip
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
-$menuStrip.Dock = [System.Windows.Forms.DockStyle]::Top
 $form.Controls.Add($menuStrip)
+
+# Initialize navigation history
+$global:navigationHistory = New-Object System.Collections.ArrayList
+$global:currentIndex = -1
 
 # File Menu
 $fileMenu = New-Object System.Windows.Forms.ToolStripMenuItem
@@ -98,40 +101,86 @@ $refresh.Add_Click({
 
 $viewMenu.DropDownItems.Add($refresh)
 
-# Add menus to MenuStrip
-$menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu))
+# Create Navigation Buttons
+$btnBack = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnBack.Text = "←"
+$btnBack.Enabled = $false
+$btnBack.Add_Click({
+    if ($global:currentIndex -gt 0) {
+        $global:currentIndex--
+        $previousPath = $global:navigationHistory[$global:currentIndex]
+        Populate-ListView $previousPath
+        Update-NavigationButtons
+    }
+})
 
-# Create a container panel for the left side
-$leftPanel = New-Object System.Windows.Forms.Panel
-$leftPanel.Size = New-Object System.Drawing.Size(500, $form.ClientSize.Height - $menuStrip.Height)
-$leftPanel.Location = New-Object System.Drawing.Point(0, $menuStrip.Height)
-$leftPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
-$form.Controls.Add($leftPanel)
+$btnForward = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnForward.Text = "→"
+$btnForward.Enabled = $false
+$btnForward.Add_Click({
+    if ($global:currentIndex -lt $global:navigationHistory.Count - 1) {
+        $global:currentIndex++
+        $nextPath = $global:navigationHistory[$global:currentIndex]
+        Populate-ListView $nextPath
+        Update-NavigationButtons
+    }
+})
+
+$btnUp = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnUp.Text = "↑"
+$btnUp.Add_Click({
+    $parentPath = Split-Path $global:currentPath -Parent
+    if ($parentPath) {
+        Navigate-To $parentPath
+    }
+})
+
+$btnDown = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnDown.Text = "↓"
+$btnDown.Add_Click({
+    if ($listView.SelectedItems.Count -gt 0) {
+        $selectedItem = $listView.SelectedItems[0]
+        if ($selectedItem -and (Test-Path -Path $selectedItem.Tag -PathType Container)) {
+            Navigate-To $selectedItem.Tag
+        }
+    }
+})
+
+# Add all items to MenuStrip in order
+$menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu, $btnBack, $btnForward, $btnUp, $btnDown))
 
 # Create Quick Access panel
 $quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$quickAccessPanel.Size = New-Object System.Drawing.Size(500, 600)
-$quickAccessPanel.Location = New-Object System.Drawing.Point(0, 0)
+$quickAccessPanel.Size = New-Object System.Drawing.Size(250, 220)
+$quickAccessPanel.Location = New-Object System.Drawing.Point(10, 50)
 $quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
 $quickAccessPanel.WrapContents = $false
 $quickAccessPanel.AutoSize = $false
-$quickAccessPanel.Dock = [System.Windows.Forms.DockStyle]::Top
-$leftPanel.Controls.Add($quickAccessPanel)
+$quickAccessPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                           [System.Windows.Forms.AnchorStyles]::Left
+$form.Controls.Add($quickAccessPanel)
 
-# Create a TreeView to display directories
+# Create TreeView
 $treeView = New-Object System.Windows.Forms.TreeView
-$treeView.Dock = [System.Windows.Forms.DockStyle]::Fill
+$treeView.Size = New-Object System.Drawing.Size(250, 290)
+$treeView.Location = New-Object System.Drawing.Point(10, 270)
 $treeView.Scrollable = $true
-$leftPanel.Controls.Add($treeView)
+$treeView.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                   [System.Windows.Forms.AnchorStyles]::Left -bor `
+                   [System.Windows.Forms.AnchorStyles]::Bottom
+$form.Controls.Add($treeView)
 
-# Create a ListView to display files
+# Create ListView
 $listView = New-Object System.Windows.Forms.ListView
-$listView.Location = New-Object System.Drawing.Point(250, $menuStrip.Height)
-$listView.Size = New-Object System.Drawing.Size($form.ClientSize.Width - 250, $form.ClientSize.Height - $menuStrip.Height)
-$listView.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+$listView.Size = New-Object System.Drawing.Size(600, 510)
+$listView.Location = New-Object System.Drawing.Point(270, 50)
 $listView.View = [System.Windows.Forms.View]::Details
 $listView.FullRowSelect = $true
 $listView.GridLines = $true
+$listView.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                   [System.Windows.Forms.AnchorStyles]::Left -bor `
+                   [System.Windows.Forms.AnchorStyles]::Right -bor `
+                   [System.Windows.Forms.AnchorStyles]::Bottom
 $form.Controls.Add($listView)
 
 # Add columns to ListView
@@ -156,6 +205,30 @@ function Format-FileSize {
     else { return "{0:N2} TB" -f ($size/1TB) }
 }
 
+# Function to update navigation buttons
+function Update-NavigationButtons {
+    $btnBack.Enabled = $global:currentIndex -gt 0
+    $btnForward.Enabled = $global:currentIndex -lt ($global:navigationHistory.Count - 1)
+    $btnUp.Enabled = (Split-Path $global:currentPath -Parent) -ne $null
+    $btnDown.Enabled = ($listView.SelectedItems.Count -gt 0) -and 
+                      (Test-Path -Path $listView.SelectedItems[0].Tag -PathType Container)
+}
+
+# Function to handle navigation
+function Navigate-To {
+    param ([string]$path)
+    
+    if (Test-Path $path) {
+        $global:currentIndex++
+        if ($global:currentIndex -lt $global:navigationHistory.Count) {
+            $global:navigationHistory.RemoveRange($global:currentIndex, $global:navigationHistory.Count - $global:currentIndex)
+        }
+        [void]$global:navigationHistory.Add($path)
+        Populate-ListView $path
+        Update-NavigationButtons
+    }
+}
+
 # Function to populate the ListView
 function Populate-ListView {
     param ([string]$path)
@@ -164,13 +237,11 @@ function Populate-ListView {
     $listView.Items.Clear()
     
     try {
-        # Get all items in the directory
         $items = Get-ChildItem -Path $path -ErrorAction Stop
         
         foreach ($item in $items) {
             $listViewItem = New-Object System.Windows.Forms.ListViewItem($item.Name)
             
-            # Set item type and size
             if ($item.PSIsContainer) {
                 $type = "Folder"
                 $size = ""
@@ -179,16 +250,15 @@ function Populate-ListView {
                 $size = Format-FileSize $item.Length
             }
             
-            # Add subitems
             $listViewItem.SubItems.Add($type)
             $listViewItem.SubItems.Add($size)
             $listViewItem.SubItems.Add($item.LastWriteTime.ToString("g"))
-            
-            # Store the full path in the Tag property
             $listViewItem.Tag = $item.FullName
             
             $listView.Items.Add($listViewItem)
         }
+        
+        Update-NavigationButtons
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -208,15 +278,12 @@ function Add-QuickAccessButton($text, $path) {
     $button.Height = 30
     $button.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
     $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $button.Margin = New-Object System.Windows.Forms.Padding(5)
-    
-    # Store the path in the button's Tag property
     $button.Tag = $path
     
     $button.Add_Click({
         $buttonPath = $this.Tag
         if (Test-Path -Path $buttonPath) {
-            Populate-ListView -path $buttonPath
+            Navigate-To -path $buttonPath
         } else {
             [System.Windows.Forms.MessageBox]::Show(
                 "Path does not exist: $buttonPath",
@@ -231,7 +298,7 @@ function Add-QuickAccessButton($text, $path) {
     return $button
 }
 
-# Add Quick Access buttons with paths using environment variables
+# Add Quick Access buttons
 $quickAccessButtons = @{
     "Desktop" = [Environment]::GetFolderPath("Desktop")
     "Downloads" = [Environment]::GetFolderPath("UserProfile") + "\Downloads"
@@ -245,14 +312,15 @@ foreach ($button in $quickAccessButtons.GetEnumerator()) {
     Add-QuickAccessButton $button.Key $button.Value
 }
 
+
+
+
 # Function to populate the TreeView
 function Populate-TreeView {
     $treeView.Nodes.Clear()
     
-    # Add "This PC" node
     $thisPC = $treeView.Nodes.Add("This PC")
     
-    # Get all drives
     Get-PSDrive -PSProvider FileSystem | ForEach-Object {
         $driveNode = $thisPC.Nodes.Add($_.Root)
         $driveNode.Tag = $_.Root
@@ -271,7 +339,7 @@ function Populate-TreeView {
 $treeView.add_AfterSelect({
     $selectedNode = $treeView.SelectedNode
     if ($selectedNode.Tag) {
-        Populate-ListView -path $selectedNode.Tag
+        Navigate-To -path $selectedNode.Tag
     }
 })
 
@@ -282,30 +350,26 @@ $listView.add_DoubleClick({
         $itemPath = $selectedItem.Tag
         
         if (Test-Path -Path $itemPath -PathType Container) {
-            Populate-ListView -path $itemPath
+            Navigate-To -path $itemPath
         } else {
             Start-Process $itemPath
         }
     }
 })
 
-# Initial TreeView population
-Populate-TreeView
-
-# Initial ListView population (using Desktop path from environment variable)
-$desktopPath = [Environment]::GetFolderPath("Desktop")
-Populate-ListView -path $desktopPath
-
-# Add resize event handler to adjust column widths
-$form.Add_Resize({
-    if ($listView.Columns.Count -gt 0) {
-        $totalWidth = $listView.ClientSize.Width
-        $lastColumnWidth = $totalWidth - ($listView.Columns[0].Width + $listView.Columns[1].Width + $listView.Columns[2].Width)
-        if ($lastColumnWidth -gt 150) {
-            $listView.Columns[3].Width = $lastColumnWidth
-        }
-    }
+# Event handler for ListView selection changed
+$listView.add_SelectedIndexChanged({
+    Update-NavigationButtons
 })
+
+# Initialize navigation with desktop path
+$desktopPath = [Environment]::GetFolderPath("Desktop")
+[void]$global:navigationHistory.Add($desktopPath)
+$global:currentIndex = 0
+
+# Initial setup
+Populate-TreeView
+Populate-ListView $desktopPath
 
 # Show the form
 [void]$form.ShowDialog()
