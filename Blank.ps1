@@ -7,22 +7,254 @@ $form = New-Object System.Windows.Forms.Form
 $form.Text = "PowerShell File Explorer"
 $form.Size = New-Object System.Drawing.Size(900, 600)
 $form.StartPosition = "CenterScreen"
+$form.BackColor = [System.Drawing.Color]::WhiteSmoke
 
-# Set the background color (optional)
-$form.BackColor = [System.Drawing.Color]::LightGray
+# Create Quick Access panel with increased height
+$quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+$quickAccessPanel.Size = New-Object System.Drawing.Size(250, 220)
+$quickAccessPanel.Location = New-Object System.Drawing.Point(10, 30)
+$quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+$quickAccessPanel.WrapContents = $false
+$quickAccessPanel.AutoSize = $false
+$quickAccessPanel.BackColor = [System.Drawing.Color]::WhiteSmoke
+$form.Controls.Add($quickAccessPanel)
+
+# Create This PC Button
+$thisPCButton = New-Object System.Windows.Forms.Button
+$thisPCButton.Text = "This PC ▶"
+$thisPCButton.Width = 240
+$thisPCButton.Height = 30
+$thisPCButton.Location = New-Object System.Drawing.Point(13, 250)
+$thisPCButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Popup
+$thisPCButton.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$thisPCButton.BackColor = [System.Drawing.Color]::LightGray
+$form.Controls.Add($thisPCButton)
 
 # Create a TreeView to display directories (left side)
 $treeView = New-Object System.Windows.Forms.TreeView
-$treeView.Size = New-Object System.Drawing.Size(250, 500)
-$treeView.Location = New-Object System.Drawing.Point(10, 50)
+$treeView.Size = New-Object System.Drawing.Size(250, 260)
+$treeView.Location = New-Object System.Drawing.Point(10, 280)
 $treeView.Scrollable = $true
+$treeView.Visible = $false
+$treeView.BackColor = [System.Drawing.Color]::WhiteSmoke
 $form.Controls.Add($treeView)
 
-# Create a ListBox to display files (right side)
-$listBox = New-Object System.Windows.Forms.ListBox
-$listBox.Size = New-Object System.Drawing.Size(600, 500)
-$listBox.Location = New-Object System.Drawing.Point(270, 50)
-$form.Controls.Add($listBox)
+# Create a ListView to display files (right side)
+$listView = New-Object System.Windows.Forms.ListView
+$listView.Size = New-Object System.Drawing.Size(600, 510)
+$listView.Location = New-Object System.Drawing.Point(270, 30)
+$listView.View = [System.Windows.Forms.View]::Details
+$listView.FullRowSelect = $true
+$listView.GridLines = $true
+$listView.BackColor = [System.Drawing.Color]::WhiteSmoke
+$form.Controls.Add($listView)
+
+# Add columns to ListView
+$columns = @(
+    @{Name="Name"; Width=250},
+    @{Name="Type"; Width=100},
+    @{Name="Size"; Width=100},
+    @{Name="Modified"; Width=150}
+)
+
+foreach ($column in $columns) {
+    $listView.Columns.Add($column.Name, $column.Width)
+}
+
+# Create a timer for drive monitoring
+$driveTimer = New-Object System.Windows.Forms.Timer
+$driveTimer.Interval = 2000  # Check every 2 seconds
+$script:currentDrives = @()
+
+# Function to get current drives
+function Get-CurrentDrives {
+    return @(Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root)
+}
+
+# Initialize current drives
+$script:currentDrives = Get-CurrentDrives
+
+# Timer tick event handler
+$driveTimer.Add_Tick({
+    $newDrives = Get-CurrentDrives
+    
+    # Check if drives have changed
+    if (($newDrives.Count -ne $script:currentDrives.Count) -or 
+        (Compare-Object -ReferenceObject $script:currentDrives -DifferenceObject $newDrives)) {
+        
+        $script:currentDrives = $newDrives
+        
+        # Only refresh if TreeView is visible
+        if ($treeView.Visible) {
+            Populate-TreeView
+        }
+    }
+})
+
+# Function to format file size
+function Format-FileSize {
+    param ([long]$size)
+    if ($size -lt 1KB) { return "$size B" }
+    elseif ($size -lt 1MB) { return "{0:N2} KB" -f ($size/1KB) }
+    elseif ($size -lt 1GB) { return "{0:N2} MB" -f ($size/1MB) }
+    elseif ($size -lt 1TB) { return "{0:N2} GB" -f ($size/1GB) }
+    else { return "{0:N2} TB" -f ($size/1TB) }
+}
+
+# Function to populate the ListView
+function Populate-ListView {
+    param ([string]$path)
+    
+    $global:currentPath = $path
+    $listView.Items.Clear()
+    
+    try {
+        # Get all items in the directory
+        $items = Get-ChildItem -Path $path -ErrorAction Stop
+        
+        foreach ($item in $items) {
+            $listViewItem = New-Object System.Windows.Forms.ListViewItem($item.Name)
+            
+            # Set item type and size
+            if ($item.PSIsContainer) {
+                $type = "Folder"
+                $size = ""
+            } else {
+                $type = if ($item.Extension) { $item.Extension.TrimStart(".").ToUpper() } else { "File" }
+                $size = Format-FileSize $item.Length
+            }
+            
+            # Add subitems
+            $listViewItem.SubItems.Add($type)
+            $listViewItem.SubItems.Add($size)
+            $listViewItem.SubItems.Add($item.LastWriteTime.ToString("g"))
+            
+            # Store the full path in the Tag property
+            $listViewItem.Tag = $item.FullName
+            
+            $listView.Items.Add($listViewItem)
+        }
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Error accessing path: $path`n$($_.Exception.Message)",
+            "Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+    }
+}
+
+# Function to create Quick Access buttons
+function Add-QuickAccessButton($text, $path) {
+    $button = New-Object System.Windows.Forms.Button
+    $button.Text = $text
+    $button.Width = 240
+    $button.Height = 30
+    $button.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Popup
+    $button.BackColor = [System.Drawing.Color]::LightGray
+    
+    # Store the path in the button's Tag property
+    $button.Tag = $path
+    
+    $button.Add_Click({
+        $buttonPath = $this.Tag
+        if (Test-Path -Path $buttonPath) {
+            Populate-ListView -path $buttonPath
+        } else {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Path does not exist: $buttonPath",
+                "Error",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            )
+        }
+    })
+    
+    $quickAccessPanel.Controls.Add($button)
+    return $button
+}
+
+# Add Quick Access buttons with paths using environment variables
+$quickAccessButtons = @{
+    "Desktop" = [Environment]::GetFolderPath("Desktop")
+    "Downloads" = [Environment]::GetFolderPath("UserProfile") + "\Downloads"
+    "Documents" = [Environment]::GetFolderPath("MyDocuments")
+    "Music" = [Environment]::GetFolderPath("MyMusic")
+    "Pictures" = [Environment]::GetFolderPath("MyPictures")
+    "Videos" = [Environment]::GetFolderPath("MyVideos")
+}
+
+foreach ($button in $quickAccessButtons.GetEnumerator()) {
+    Add-QuickAccessButton $button.Key $button.Value
+}
+
+# Function to populate the TreeView
+function Populate-TreeView {
+    $treeView.Nodes.Clear()
+    
+    # Get all drives
+    Get-PSDrive -PSProvider FileSystem | ForEach-Object {
+        $driveNode = $treeView.Nodes.Add($_.Root)
+        $driveNode.Tag = $_.Root
+        try {
+            Get-ChildItem -Path $_.Root -Directory -ErrorAction Stop | ForEach-Object {
+                $subNode = $driveNode.Nodes.Add($_.Name)
+                $subNode.Tag = $_.FullName
+            }
+            # Auto-expand drive nodes
+
+        } catch {}
+    }
+}
+
+# Add click event for This PC Button
+$thisPCButton.Add_Click({
+    if ($treeView.Visible) {
+        $treeView.Visible = $false
+        $thisPCButton.Text = "This PC ▶"
+        $driveTimer.Stop()
+    } else {
+        $treeView.Visible = $true
+        $thisPCButton.Text = "This PC ▼"
+        if ($treeView.Nodes.Count -eq 0) {
+            Populate-TreeView
+        }
+        $driveTimer.Start()
+    }
+})
+
+# Event handler for TreeView node click
+$treeView.add_AfterSelect({
+    $selectedNode = $treeView.SelectedNode
+    if ($selectedNode.Tag) {
+        Populate-ListView -path $selectedNode.Tag
+    }
+})
+
+# Event handler for ListView double-click
+$listView.add_DoubleClick({
+    $selectedItem = $listView.SelectedItems[0]
+    if ($selectedItem) {
+        $itemPath = $selectedItem.Tag
+        
+        if (Test-Path -Path $itemPath -PathType Container) {
+            Populate-ListView -path $itemPath
+        } else {
+            Start-Process $itemPath
+        }
+    }
+})
+
+# Form closing event to clean up timer
+$form.Add_FormClosing({
+    $driveTimer.Stop()
+})
+
+# Initial ListView population (using Desktop path from environment variable)
+$desktopPath = [Environment]::GetFolderPath("Desktop")
+Populate-ListView -path $desktopPath
 
 # Show the form
 [void]$form.ShowDialog()
