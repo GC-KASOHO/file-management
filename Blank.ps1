@@ -220,8 +220,45 @@ $btnDown.Add_Click({
     }
 })
 
+$btnDown = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnDown.Text = "↓"
+$btnDown.Add_Click({
+    if ($listView.SelectedItems.Count -gt 0) {
+        $selectedItem = $listView.SelectedItems[0]
+        if ($selectedItem -and (Test-Path -Path $selectedItem.Tag -PathType Container)) {
+            Navigate-To $selectedItem.Tag
+        }
+    }
+})
+
 # Add all items to MenuStrip in order
 $menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu, $btnBack, $btnForward, $btnUp, $btnDown))
+
+# Create address bar in MenuStrip
+$addressBar = New-Object System.Windows.Forms.ToolStripTextBox
+$addressBar.Size = New-Object System.Drawing.Size(400, 25)
+$addressBar.Name = "AddressBar"
+$addressBar.AutoSize = $false
+$addressBar.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+# Add event handler for address bar
+$addressBar.Add_KeyPress({
+    param($sender, $e)
+    if ($e.KeyChar -eq [System.Windows.Forms.Keys]::Enter) {
+        $e.Handled = $true
+        $path = $addressBar.Text.Trim()
+        if (Test-Path -Path $path) {
+            Navigate-To $path
+        } else {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Invalid path: $path",
+                "Error",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            )
+        }
+    }
+})
 
 # Create search box in MenuStrip
 $searchBox = New-Object System.Windows.Forms.ToolStripTextBox
@@ -234,12 +271,13 @@ $searchButton = New-Object System.Windows.Forms.ToolStripButton
 $searchButton.Text = "Search"
 $searchButton.DisplayStyle = [System.Windows.Forms.ToolStripItemDisplayStyle]::Text
 
-# Add spring to push search controls to right
-$spring = New-Object System.Windows.Forms.ToolStripStatusLabel
-$spring.Spring = $true
-
-# Add search controls to MenuStrip
-$menuStrip.Items.Add($spring)
+# Add controls to MenuStrip
+$menuStrip.Items.Add($addressBar)
+# Add a small spring after address bar
+$springAfterAddress = New-Object System.Windows.Forms.ToolStripStatusLabel
+$springAfterAddress.Spring = $true
+$springAfterAddress.Width = 20
+$menuStrip.Items.Add($springAfterAddress)
 $menuStrip.Items.Add($searchBox)
 $menuStrip.Items.Add($searchButton)
 
@@ -537,6 +575,9 @@ function Populate-ListView {
     param ([string]$path)
     
     $global:currentPath = $path
+
+    $addressBar.Text = $path
+
     $listView.Items.Clear()
     
     try {
