@@ -2,13 +2,18 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# Global variables for navigation
+$global:navigationHistory = New-Object System.Collections.ArrayList
+$global:currentHistoryPosition = -1
+$global:currentPath = $null
+
 # Create a form for the File Explorer
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "PowerShell File Explorer"
 $form.Size = New-Object System.Drawing.Size(900, 600)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::LightGray
-$form.MinimumSize = New-Object System.Drawing.Size(600, 400)  # Set minimum size
+$form.MinimumSize = New-Object System.Drawing.Size(600, 400)
 
 # Create TableLayoutPanel for better resizing
 $tableLayoutPanel = New-Object System.Windows.Forms.TableLayoutPanel
@@ -25,6 +30,46 @@ $tableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([Syste
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
 $form.MainMenuStrip = $menuStrip
 
+# Create Navigation Buttons
+$backButton = New-Object System.Windows.Forms.ToolStripButton
+$backButton.Text = "←"
+$backButton.ToolTipText = "Back"
+$backButton.Enabled = $false
+$backButton.Add_Click({
+    if ($global:currentHistoryPosition -gt 0) {
+        $global:currentHistoryPosition--
+        $path = $global:navigationHistory[$global:currentHistoryPosition]
+        NavigateToPath $path $false
+        UpdateNavigationButtons
+    }
+})
+
+$forwardButton = New-Object System.Windows.Forms.ToolStripButton
+$forwardButton.Text = "→"
+$forwardButton.ToolTipText = "Forward"
+$forwardButton.Enabled = $false
+$forwardButton.Add_Click({
+    if ($global:currentHistoryPosition -lt $global:navigationHistory.Count - 1) {
+        $global:currentHistoryPosition++
+        $path = $global:navigationHistory[$global:currentHistoryPosition]
+        NavigateToPath $path $false
+        UpdateNavigationButtons
+    }
+})
+
+$upButton = New-Object System.Windows.Forms.ToolStripButton
+$upButton.Text = "↑"
+$upButton.ToolTipText = "Up One Level"
+$upButton.Add_Click({
+    if ($global:currentPath) {
+        $parent = Split-Path -Path $global:currentPath -Parent
+        if ($parent) {
+            NavigateToPath $parent $true
+            UpdateNavigationButtons
+        }
+    }
+})
+
 # File Menu
 $fileMenu = New-Object System.Windows.Forms.ToolStripMenuItem
 $fileMenu.Text = "File"
@@ -33,16 +78,12 @@ $newFolderItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $newFolderItem.Text = "New Folder"
 $newFolderItem.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::N
 $newFolderItem.Add_Click({
-    $selectedNode = $treeView.SelectedNode
-    if ($selectedNode) {
+    if ($global:currentPath) {
         $folderName = [Microsoft.VisualBasic.Interaction]::InputBox("Enter folder name:", "New Folder", "New Folder")
         if ($folderName) {
-            $path = Join-Path $selectedNode.Tag $folderName
+            $path = Join-Path $global:currentPath $folderName
             New-Item -Path $path -ItemType Directory
-            $newNode = New-Object System.Windows.Forms.TreeNode
-            $newNode.Text = $folderName
-            $newNode.Tag = $path
-            $selectedNode.Nodes.Add($newNode)
+            RefreshExplorer
             $statusLabel.Text = "Created new folder: $folderName"
         }
     }
@@ -70,7 +111,7 @@ $deleteItem.Text = "Delete"
 $deleteItem.ShortcutKeys = [System.Windows.Forms.Keys]::Delete
 $deleteItem.Add_Click({
     if ($listBox.SelectedItem) {
-        $selectedPath = Join-Path $currentPath $listBox.SelectedItem
+        $selectedPath = Join-Path $global:currentPath $listBox.SelectedItem
         $result = [System.Windows.Forms.MessageBox]::Show(
             "Are you sure you want to delete $($listBox.SelectedItem)?",
             "Confirm Delete",
@@ -92,8 +133,8 @@ $renameItem.Add_Click({
         $oldName = $listBox.SelectedItem
         $newName = [Microsoft.VisualBasic.Interaction]::InputBox("Enter new name:", "Rename", $oldName)
         if ($newName -and ($newName -ne $oldName)) {
-            $oldPath = Join-Path $currentPath $oldName
-            $newPath = Join-Path $currentPath $newName
+            $oldPath = Join-Path $global:currentPath $oldName
+            $newPath = Join-Path $global:currentPath $newName
             Rename-Item -Path $oldPath -NewName $newName
             RefreshExplorer
             $statusLabel.Text = "Renamed: $oldName to $newName"
@@ -108,18 +149,16 @@ $viewMenu.Text = "View"
 $detailsViewItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $detailsViewItem.Text = "Details View"
 $detailsViewItem.Add_Click({
-    # TODO: Implement detailed view
     $statusLabel.Text = "Switched to details view"
 })
 
 $iconsViewItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $iconsViewItem.Text = "Icons View"
 $iconsViewItem.Add_Click({
-    # TODO: Implement icons view
     $statusLabel.Text = "Switched to icons view"
 })
 
-# Create TreeView and ListBox with Dock property
+# Create TreeView and ListBox
 $treeView = New-Object System.Windows.Forms.TreeView
 $treeView.Dock = [System.Windows.Forms.DockStyle]::Fill
 $treeView.Scrollable = $true
@@ -144,15 +183,48 @@ $fileMenu.DropDownItems.AddRange(@($newFolderItem, $refreshItem,
 $editMenu.DropDownItems.AddRange(@($deleteItem, $renameItem))
 $viewMenu.DropDownItems.AddRange(@($detailsViewItem, $iconsViewItem))
 
-# Add menus to menu strip
-$menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu))
+# Add menus and navigation buttons to menu strip
+$menuStrip.Items.AddRange(@($backButton, $forwardButton, $upButton, $fileMenu, $editMenu, $viewMenu))
+
+# Navigation Functions
+function NavigateToPath {
+    param (
+        [string]$path,
+        [bool]$addToHistory = $true
+    )
+    
+    if (Test-Path -Path $path) {
+        $global:currentPath = $path
+        
+        if ($addToHistory) {
+            # Remove any forward history
+            if ($global:currentHistoryPosition -lt $global:navigationHistory.Count - 1) {
+                $global:navigationHistory.RemoveRange(
+                    $global:currentHistoryPosition + 1,
+                    $global:navigationHistory.Count - $global:currentHistoryPosition - 1
+                )
+            }
+            
+            [void]$global:navigationHistory.Add($path)
+            $global:currentHistoryPosition = $global:navigationHistory.Count - 1
+        }
+        
+        RefreshExplorer
+        $statusLabel.Text = "Current Path: $path"
+    }
+}
+
+function UpdateNavigationButtons {
+    $backButton.Enabled = $global:currentHistoryPosition -gt 0
+    $forwardButton.Enabled = $global:currentHistoryPosition -lt $global:navigationHistory.Count - 1
+    $upButton.Enabled = $global:currentPath -and (Split-Path -Path $global:currentPath -Parent)
+}
 
 # Function to refresh the explorer
 function RefreshExplorer {
-    if ($treeView.SelectedNode) {
-        $currentPath = $treeView.SelectedNode.Tag
+    if ($global:currentPath) {
         $listBox.Items.Clear()
-        Get-ChildItem -Path $currentPath | ForEach-Object {
+        Get-ChildItem -Path $global:currentPath | ForEach-Object {
             $listBox.Items.Add($_.Name)
         }
     }
@@ -160,8 +232,22 @@ function RefreshExplorer {
 
 # TreeView node selection event
 $treeView.Add_AfterSelect({
-    $currentPath = $this.SelectedNode.Tag
-    RefreshExplorer
+    $path = $this.SelectedNode.Tag
+    NavigateToPath $path
+    UpdateNavigationButtons
+})
+
+# ListBox double-click event
+$listBox.Add_DoubleClick({
+    if ($listBox.SelectedItem) {
+        $selectedPath = Join-Path $global:currentPath $listBox.SelectedItem
+        if (Test-Path -Path $selectedPath -PathType Container) {
+            NavigateToPath $selectedPath
+            UpdateNavigationButtons
+        } else {
+            Start-Process $selectedPath
+        }
+    }
 })
 
 # Initialize root node (My Computer)
@@ -184,4 +270,3 @@ $form.Controls.Add($tableLayoutPanel)
 
 # Show the form
 [void]$form.ShowDialog()
-#Piadozo Menu Bar
