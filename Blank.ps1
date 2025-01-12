@@ -1119,8 +1119,8 @@ function Create-NewFile {
 
 # Event handler for Open
 $menuItemOpen.Add_Click({
-    if ($listView.SelectedItems.Count -gt 0) {
-        $itemPath = $listView.SelectedItems[0].Tag
+    foreach ($selectedItem in $listView.SelectedItems) {
+        $itemPath = $selectedItem.Tag
         if (Test-Path -Path $itemPath) {
             Start-Process $itemPath
         }
@@ -1130,70 +1130,126 @@ $menuItemOpen.Add_Click({
 # Event handler for Copy
 $menuItemCopy.Add_Click({
     if ($listView.SelectedItems.Count -gt 0) {
-        $itemPath = $listView.SelectedItems[0].Tag
-        if (Test-Path -Path $itemPath) {
-            $global:clipboardPath = $itemPath
-            $global:isCut = $false
-            [System.Windows.Forms.MessageBox]::Show("Copied to clipboard: $itemPath")
+        $global:clipboardPaths = @()
+        foreach ($selectedItem in $listView.SelectedItems) {
+            $itemPath = $selectedItem.Tag
+            if (Test-Path -Path $itemPath) {
+                $global:clipboardPaths += $itemPath
+            }
         }
+        $global:isCut = $false
+        [System.Windows.Forms.MessageBox]::Show(
+            "Copied $($global:clipboardPaths.Count) items to clipboard",
+            "Copy",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        )
     }
 })
 
 # Event handler for Cut
 $menuItemCut.Add_Click({
     if ($listView.SelectedItems.Count -gt 0) {
-        $itemPath = $listView.SelectedItems[0].Tag
-        if (Test-Path -Path $itemPath) {
-            $global:clipboardPath = $itemPath
-            $global:isCut = $true
-            [System.Windows.Forms.MessageBox]::Show("Cut to clipboard: $itemPath")
+        $global:clipboardPaths = @()
+        foreach ($selectedItem in $listView.SelectedItems) {
+            $itemPath = $selectedItem.Tag
+            if (Test-Path -Path $itemPath) {
+                $global:clipboardPaths += $itemPath
+            }
         }
+        $global:isCut = $true
+        [System.Windows.Forms.MessageBox]::Show(
+            "Cut $($global:clipboardPaths.Count) items to clipboard",
+            "Cut",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        )
     }
 })
 
 # Event handler for Paste
 $menuItemPaste.Add_Click({
-    if ($global:clipboardPath -ne $null -and (Test-Path -Path $global:currentPath)) {
-        $destinationPath = Join-Path -Path $global:currentPath -ChildPath (Get-Item $global:clipboardPath).Name
-        try {
-            if ($global:isCut) {
-                Move-Item -Path $global:clipboardPath -Destination $destinationPath -Force
-                [System.Windows.Forms.MessageBox]::Show("Moved to: $destinationPath")
-            } else {
-                Copy-Item -Path $global:clipboardPath -Destination $destinationPath -Force
-                [System.Windows.Forms.MessageBox]::Show("Copied to: $destinationPath")
+    if ($global:clipboardPaths -and (Test-Path -Path $global:currentPath)) {
+        $totalItems = $global:clipboardPaths.Count
+        $successCount = 0
+        $errorCount = 0
+        
+        foreach ($sourcePath in $global:clipboardPaths) {
+            $destinationPath = Join-Path -Path $global:currentPath -ChildPath (Split-Path $sourcePath -Leaf)
+            try {
+                if ($global:isCut) {
+                    Move-Item -Path $sourcePath -Destination $destinationPath -Force
+                } else {
+                    Copy-Item -Path $sourcePath -Destination $destinationPath -Force -Recurse
+                }
+                $successCount++
+            } catch {
+                $errorCount++
             }
-            Populate-ListView -path $global:currentPath
-        } catch {
-            [System.Windows.Forms.MessageBox]::Show("Error during paste operation: $($_.Exception.Message)", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
         }
+        
+        # Clear clipboard after cut operation
+        if ($global:isCut -and $successCount -eq $totalItems) {
+            $global:clipboardPaths = $null
+        }
+        
+        # Show results
+        $message = "Operation completed:`n" +
+                  "Successfully processed: $successCount`n" +
+                  "Errors: $errorCount"
+        [System.Windows.Forms.MessageBox]::Show($message, "Paste Complete", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        
+        Populate-ListView -path $global:currentPath
     } else {
-        [System.Windows.Forms.MessageBox]::Show("No item to paste or invalid destination.", "Paste Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+        [System.Windows.Forms.MessageBox]::Show(
+            "No items to paste or invalid destination.",
+            "Paste Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
     }
 })
 
 # Event handler for Delete
 $menuItemDelete.Add_Click({
     if ($listView.SelectedItems.Count -gt 0) {
-        $itemPath = $listView.SelectedItems[0].Tag
-        if (Test-Path -Path $itemPath) {
-            $confirmation = [System.Windows.Forms.MessageBox]::Show(
-                "Are you sure you want to delete this item: $itemPath?",
-                "Confirm Delete",
-                [System.Windows.Forms.MessageBoxButtons]::YesNo,
-                [System.Windows.Forms.MessageBoxIcon]::Warning
-            )
-            if ($confirmation -eq [System.Windows.Forms.DialogResult]::Yes) {
-                Remove-Item -Path $itemPath -Recurse -Force -ErrorAction SilentlyContinue
-                Populate-ListView -path $global:currentPath
+        $itemCount = $listView.SelectedItems.Count
+        $confirmation = [System.Windows.Forms.MessageBox]::Show(
+            "Are you sure you want to delete $itemCount selected item$(if($itemCount -gt 1){'s'})?",
+            "Confirm Delete",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+        
+        if ($confirmation -eq [System.Windows.Forms.DialogResult]::Yes) {
+            $successCount = 0
+            $errorCount = 0
+            
+            foreach ($selectedItem in $listView.SelectedItems) {
+                $itemPath = $selectedItem.Tag
+                try {
+                    Remove-Item -Path $itemPath -Recurse -Force -ErrorAction Stop
+                    $successCount++
+                } catch {
+                    $errorCount++
+                }
             }
+            
+            # Show results
+            $message = "Delete operation completed:`n" +
+                      "Successfully deleted: $successCount`n" +
+                      "Errors: $errorCount"
+            [System.Windows.Forms.MessageBox]::Show($message, "Delete Complete", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            
+            Populate-ListView -path $global:currentPath
         }
     }
 })
 
 # Event handler for Properties
 $menuItemProperties.Add_Click({
-    if ($listView.SelectedItems.Count -gt 0) {
+    if ($listView.SelectedItems.Count -eq 1) {
+        # Single item properties
         $itemPath = $listView.SelectedItems[0].Tag
         if (Test-Path -Path $itemPath) {
             $properties = Get-Item -Path $itemPath
@@ -1218,6 +1274,32 @@ $menuItemProperties.Add_Click({
             [System.Windows.Forms.MessageBox]::Show($propertiesInfo, "Properties", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
     }
+    else {
+        # Multiple items properties
+        $totalItems = $listView.SelectedItems.Count
+        $totalFiles = 0
+        $totalFolders = 0
+        $totalSize = 0
+        
+        foreach ($selectedItem in $listView.SelectedItems) {
+            $itemPath = $selectedItem.Tag
+            $item = Get-Item -Path $itemPath
+            
+            if ($item.PSIsContainer) {
+                $totalFolders++
+            } else {
+                $totalFiles++
+                $totalSize += $item.Length
+            }
+        }
+        
+        $propertiesInfo = "Selected Items: $totalItems`n" +
+                         "Files: $totalFiles`n" +
+                         "Folders: $totalFolders`n" +
+                         "Total Size: $(Format-FileSize $totalSize)"
+        
+        [System.Windows.Forms.MessageBox]::Show($propertiesInfo, "Multiple Items Properties", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    }
 })
 
 # Event handler for Refresh
@@ -1232,12 +1314,17 @@ $listView.ContextMenuStrip = $contextMenu
 $listView.add_MouseDown({
     if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
         $hitTest = $listView.HitTest($_.Location)
-        if ($hitTest.Item -ne $null) {
+        
+        # Only clear selection if clicking empty space
+        if ($hitTest.Item -eq $null) {
             $listView.SelectedItems.Clear()
+        }
+        # If clicking an unselected item, select it while preserving other selections
+        elseif (!$hitTest.Item.Selected) {
+            if (!([System.Windows.Forms.Control]::ModifierKeys -band [System.Windows.Forms.Keys]::Control)) {
+                $listView.SelectedItems.Clear()
+            }
             $hitTest.Item.Selected = $true
-        } else {
-            # If right-clicked on empty space, clear selection
-            $listView.SelectedItems.Clear()
         }
     }
 })
