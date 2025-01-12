@@ -27,14 +27,14 @@ $form.Controls.Add($listBox)
 # Create a TextBox for the search functionality
 $searchBox = New-Object System.Windows.Forms.TextBox
 $searchBox.Size = New-Object System.Drawing.Size(200, 20)
-$searchBox.Location = New-Object System.Drawing.Point(10, 10)
+$searchBox.Location = New-Object System.Drawing.Point(600,12)
 $form.Controls.Add($searchBox)
 
 # Create a Button for initiating the search
 $searchButton = New-Object System.Windows.Forms.Button
 $searchButton.Text = "Search"
-$searchButton.Size = New-Object System.Drawing.Size(75, 25)
-$searchButton.Location = New-Object System.Drawing.Point(806, 10)
+$searchButton.Size = New-Object System.Drawing.Size(70, 20)
+$searchButton.Location = New-Object System.Drawing.Point(806, 11)
 $form.Controls.Add($searchButton)
 
 # Function to search for files and folders
