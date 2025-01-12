@@ -4,73 +4,258 @@ Add-Type -AssemblyName System.Drawing
 
 # Create a form for the File Explorer
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "PowerShell File Explorer with Preview"
-$form.Size = New-Object System.Drawing.Size(1400, 800)
+$form.Text = "PowerShell File Explorer"
+$form.Size = New-Object System.Drawing.Size(1200, 600)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::LightGray
 
-# Create main SplitContainer for left and right panels
-$mainSplitContainer = New-Object System.Windows.Forms.SplitContainer
-$mainSplitContainer.Dock = [System.Windows.Forms.DockStyle]::Fill
-$mainSplitContainer.SplitterDistance = 900
-$form.Controls.Add($mainSplitContainer)
+# Create a splitter for dynamic preview panel
+$splitter = New-Object System.Windows.Forms.Splitter
+$splitter.Dock = [System.Windows.Forms.DockStyle]::Right
+$splitter.Width = 5
+$splitter.Visible = $false
+$form.Controls.Add($splitter)
 
-# Left Panel Container
-$leftPanel = New-Object System.Windows.Forms.Panel
-$leftPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-$mainSplitContainer.Panel1.Controls.Add($leftPanel)
+# Create Preview Panel with improved visibility control
+$previewPanel = New-Object System.Windows.Forms.Panel
+$previewPanel.Size = New-Object System.Drawing.Size(390, 510)
+$previewPanel.Location = New-Object System.Drawing.Point(780, 50)
+$previewPanel.BackColor = [System.Drawing.Color]::White
+$previewPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                       [System.Windows.Forms.AnchorStyles]::Right -bor `
+                       [System.Windows.Forms.AnchorStyles]::Bottom
+$previewPanel.Visible = $false
+$form.Controls.Add($previewPanel)
+
+# Create Preview Header
+$previewHeader = New-Object System.Windows.Forms.Panel
+$previewHeader.Height = 30
+$previewHeader.Dock = [System.Windows.Forms.DockStyle]::Top
+$previewHeader.BackColor = [System.Drawing.Color]::WhiteSmoke
+$previewPanel.Controls.Add($previewHeader)
+
+# Create Close Button for Preview Panel
+$closePreviewButton = New-Object System.Windows.Forms.Button
+$closePreviewButton.Text = "×"
+$closePreviewButton.Size = New-Object System.Drawing.Size(30, 30)
+$closePreviewButton.Dock = [System.Windows.Forms.DockStyle]::Right
+$closePreviewButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$closePreviewButton.Add_Click({
+    Hide-PreviewPanel
+})
+$previewHeader.Controls.Add($closePreviewButton)
+
+# Create Preview Title Label
+$previewTitle = New-Object System.Windows.Forms.Label
+$previewTitle.Text = "File Preview"
+$previewTitle.Dock = [System.Windows.Forms.DockStyle]::Fill
+$previewTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$previewTitle.Padding = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
+$previewHeader.Controls.Add($previewTitle)
+
+# Create Preview Content Panel
+$previewContent = New-Object System.Windows.Forms.Panel
+$previewContent.Dock = [System.Windows.Forms.DockStyle]::Fill
+$previewPanel.Controls.Add($previewContent)
+
+# Create various preview controls
+$pictureBox = New-Object System.Windows.Forms.PictureBox
+$pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill
+$pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+$pictureBox.Visible = $false
+$previewContent.Controls.Add($pictureBox)
+
+$textPreview = New-Object System.Windows.Forms.RichTextBox
+$textPreview.Dock = [System.Windows.Forms.DockStyle]::Fill
+$textPreview.ReadOnly = $true
+$textPreview.Font = New-Object System.Drawing.Font("Consolas", 10)
+$textPreview.Visible = $false
+$previewContent.Controls.Add($textPreview)
+
+$webBrowser = New-Object System.Windows.Forms.WebBrowser
+$webBrowser.Dock = [System.Windows.Forms.DockStyle]::Fill
+$webBrowser.Visible = $false
+$previewContent.Controls.Add($webBrowser)
+
+$previewLabel = New-Object System.Windows.Forms.Label
+$previewLabel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$previewLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$previewLabel.Font = New-Object System.Drawing.Font("Segoe UI", 12)
+$previewContent.Controls.Add($previewLabel)
+
+# Create MenuStrip
+$menuStrip = New-Object System.Windows.Forms.MenuStrip
+$form.Controls.Add($menuStrip)
+
+# Initialize navigation history
+$global:navigationHistory = New-Object System.Collections.ArrayList
+$global:currentIndex = -1
+
+# File Menu
+$fileMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+$fileMenu.Text = "File"
+
+$newWindow = New-Object System.Windows.Forms.ToolStripMenuItem
+$newWindow.Text = "New Window"
+$newWindow.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::N
+$newWindow.Add_Click({
+    Start-Process powershell -ArgumentList "-File `"$PSCommandPath`""
+})
+
+$exit = New-Object System.Windows.Forms.ToolStripMenuItem
+$exit.Text = "Exit"
+$exit.ShortcutKeys = [System.Windows.Forms.Keys]::Alt -bor [System.Windows.Forms.Keys]::F4
+$exit.Add_Click({ $form.Close() })
+
+$fileMenu.DropDownItems.AddRange(@($newWindow, $exit))
+
+# Edit Menu
+$editMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+$editMenu.Text = "Edit"
+
+$copy = New-Object System.Windows.Forms.ToolStripMenuItem
+$copy.Text = "Copy"
+$copy.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::C
+$copy.Add_Click({
+    if ($listView.SelectedItems.Count -gt 0) {
+        $paths = $listView.SelectedItems | ForEach-Object { $_.Tag }
+        [System.Windows.Forms.Clipboard]::SetText(($paths -join "`r`n"))
+    }
+})
+
+$paste = New-Object System.Windows.Forms.ToolStripMenuItem
+$paste.Text = "Paste"
+$paste.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::V
+$paste.Add_Click({
+    if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+        $paths = [System.Windows.Forms.Clipboard]::GetText() -split "`r`n"
+        foreach ($path in $paths) {
+            if (Test-Path $path) {
+                $destination = Join-Path $global:currentPath (Split-Path $path -Leaf)
+                Copy-Item -Path $path -Destination $destination -Recurse
+            }
+        }
+        Populate-ListView $global:currentPath
+    }
+})
+
+$delete = New-Object System.Windows.Forms.ToolStripMenuItem
+$delete.Text = "Delete"
+$delete.ShortcutKeys = [System.Windows.Forms.Keys]::Delete
+$delete.Add_Click({
+    if ($listView.SelectedItems.Count -gt 0) {
+        $result = [System.Windows.Forms.MessageBox]::Show(
+            "Are you sure you want to delete the selected items?",
+            "Confirm Delete",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+        if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+            $listView.SelectedItems | ForEach-Object {
+                Remove-Item $_.Tag -Recurse -Force
+            }
+            Populate-ListView $global:currentPath
+        }
+    }
+})
+
+$editMenu.DropDownItems.AddRange(@($copy, $paste, $delete))
+
+# View Menu
+$viewMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+$viewMenu.Text = "View"
+
+$refresh = New-Object System.Windows.Forms.ToolStripMenuItem
+$refresh.Text = "Refresh"
+$refresh.ShortcutKeys = [System.Windows.Forms.Keys]::F5
+$refresh.Add_Click({
+    Populate-ListView $global:currentPath
+    Populate-TreeView
+})
+
+$viewMenu.DropDownItems.Add($refresh)
+
+# Create Navigation Buttons
+$btnBack = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnBack.Text = "←"
+$btnBack.Enabled = $false
+$btnBack.Add_Click({
+    if ($global:currentIndex -gt 0) {
+        $global:currentIndex--
+        $previousPath = $global:navigationHistory[$global:currentIndex]
+        Populate-ListView $previousPath
+        Update-NavigationButtons
+    }
+})
+
+$btnForward = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnForward.Text = "→"
+$btnForward.Enabled = $false
+$btnForward.Add_Click({
+    if ($global:currentIndex -lt $global:navigationHistory.Count - 1) {
+        $global:currentIndex++
+        $nextPath = $global:navigationHistory[$global:currentIndex]
+        Populate-ListView $nextPath
+        Update-NavigationButtons
+    }
+})
+
+$btnUp = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnUp.Text = "↑"
+$btnUp.Add_Click({
+    $parentPath = Split-Path $global:currentPath -Parent
+    if ($parentPath) {
+        Navigate-To $parentPath
+    }
+})
+
+$btnDown = New-Object System.Windows.Forms.ToolStripMenuItem
+$btnDown.Text = "↓"
+$btnDown.Add_Click({
+    if ($listView.SelectedItems.Count -gt 0) {
+        $selectedItem = $listView.SelectedItems[0]
+        if ($selectedItem -and (Test-Path -Path $selectedItem.Tag -PathType Container)) {
+            Navigate-To $selectedItem.Tag
+        }
+    }
+})
+
+# Add all items to MenuStrip in order
+$menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu, $btnBack, $btnForward, $btnUp, $btnDown))
 
 # Create Quick Access panel
 $quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $quickAccessPanel.Size = New-Object System.Drawing.Size(250, 220)
-$quickAccessPanel.Location = New-Object System.Drawing.Point(10, 10)
+$quickAccessPanel.Location = New-Object System.Drawing.Point(10, 50)
 $quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
 $quickAccessPanel.WrapContents = $false
 $quickAccessPanel.AutoSize = $false
-$leftPanel.Controls.Add($quickAccessPanel)
+$quickAccessPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                           [System.Windows.Forms.AnchorStyles]::Left
+$form.Controls.Add($quickAccessPanel)
 
 # Create TreeView
 $treeView = New-Object System.Windows.Forms.TreeView
-$treeView.Location = New-Object System.Drawing.Point(10, 240)
-$treeView.Size = New-Object System.Drawing.Size(250, 510)
+$treeView.Size = New-Object System.Drawing.Size(250, 290)
+$treeView.Location = New-Object System.Drawing.Point(10, 270)
 $treeView.Scrollable = $true
-$leftPanel.Controls.Add($treeView)
+$treeView.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                   [System.Windows.Forms.AnchorStyles]::Left -bor `
+                   [System.Windows.Forms.AnchorStyles]::Bottom
+$form.Controls.Add($treeView)
 
 # Create ListView
 $listView = New-Object System.Windows.Forms.ListView
-$listView.Location = New-Object System.Drawing.Point(270, 10)
-$listView.Size = New-Object System.Drawing.Size(620, 740)
+$listView.Size = New-Object System.Drawing.Size(500, 510)
+$listView.Location = New-Object System.Drawing.Point(270, 50)
 $listView.View = [System.Windows.Forms.View]::Details
 $listView.FullRowSelect = $true
 $listView.GridLines = $true
-$leftPanel.Controls.Add($listView)
-
-# Create Preview Panel (Right Side)
-$previewPanel = New-Object System.Windows.Forms.Panel
-$previewPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-$previewPanel.BackColor = [System.Drawing.Color]::White
-$mainSplitContainer.Panel2.Controls.Add($previewPanel)
-
-# Create Preview Controls
-$pictureBox = New-Object System.Windows.Forms.PictureBox
-$pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
-$pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill
-$pictureBox.Visible = $false
-$previewPanel.Controls.Add($pictureBox)
-
-$textPreview = New-Object System.Windows.Forms.RichTextBox
-$textPreview.ReadOnly = $true
-$textPreview.Dock = [System.Windows.Forms.DockStyle]::Fill
-$textPreview.Visible = $false
-$textPreview.Font = New-Object System.Drawing.Font("Consolas", 10)
-$previewPanel.Controls.Add($textPreview)
-
-$noPreviewLabel = New-Object System.Windows.Forms.Label
-$noPreviewLabel.Text = "No preview available"
-$noPreviewLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-$noPreviewLabel.Dock = [System.Windows.Forms.DockStyle]::Fill
-$noPreviewLabel.Visible = $true
-$previewPanel.Controls.Add($noPreviewLabel)
+$listView.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                   [System.Windows.Forms.AnchorStyles]::Left -bor `
+                   [System.Windows.Forms.AnchorStyles]::Right -bor `
+                   [System.Windows.Forms.AnchorStyles]::Bottom
+$form.Controls.Add($listView)
 
 # Add columns to ListView
 $columns = @(
@@ -94,66 +279,186 @@ function Format-FileSize {
     else { return "{0:N2} TB" -f ($size/1TB) }
 }
 
-# Function to show preview
-function Show-Preview {
-    param ([string]$filePath)
+# Function to update navigation buttons
+function Update-NavigationButtons {
+    $btnBack.Enabled = $global:currentIndex -gt 0
+    $btnForward.Enabled = $global:currentIndex -lt ($global:navigationHistory.Count - 1)
+    $btnUp.Enabled = (Split-Path $global:currentPath -Parent) -ne $null
+    $btnDown.Enabled = ($listView.SelectedItems.Count -gt 0) -and 
+                      (Test-Path -Path $listView.SelectedItems[0].Tag -PathType Container)
+}
+
+# Function to handle navigation
+function Navigate-To {
+    param ([string]$path)
     
-    # Reset all preview controls
-    $pictureBox.Visible = $false
-    $textPreview.Visible = $false
-    $noPreviewLabel.Visible = $false
-    
-    if (-not (Test-Path $filePath)) {
-        $noPreviewLabel.Visible = $true
-        return
-    }
-    
-    try {
-        $extension = [System.IO.Path]::GetExtension($filePath).ToLower()
-        
-        switch -Regex ($extension) {
-            # Image files
-            '\.(jpg|jpeg|png|gif|bmp)$' {
-                $image = [System.Drawing.Image]::FromFile($filePath)
-                $pictureBox.Image = $image
-                $pictureBox.Visible = $true
-            }
-            
-            # Text files
-            '\.(txt|log|xml|json|ps1|cmd|bat|cfg|ini|csv|html|htm)$' {
-                $textPreview.Text = Get-Content -Path $filePath -Raw -ErrorAction Stop
-                $textPreview.Visible = $true
-            }
-            
-            # Other files
-            default {
-                $item = Get-Item $filePath
-                $info = "File Properties:`r`n`r`n"
-                $info += "Name: $($item.Name)`r`n"
-                $info += "Type: $($item.Extension.TrimStart('.'))`r`n"
-                $info += "Size: $(Format-FileSize $item.Length)`r`n"
-                $info += "Created: $($item.CreationTime)`r`n"
-                $info += "Modified: $($item.LastWriteTime)`r`n"
-                $info += "Attributes: $($item.Attributes)`r`n"
-                
-                $textPreview.Text = $info
-                $textPreview.Visible = $true
-            }
+    if (Test-Path $path) {
+        $global:currentIndex++
+        if ($global:currentIndex -lt $global:navigationHistory.Count) {
+            $global:navigationHistory.RemoveRange($global:currentIndex, $global:navigationHistory.Count - $global:currentIndex)
         }
-    }
-    catch {
-        $noPreviewLabel.Text = "Error loading preview: $($_.Exception.Message)"
-        $noPreviewLabel.Visible = $true
-    }
-    finally {
-        [System.GC]::Collect()
+        [void]$global:navigationHistory.Add($path)
+        Populate-ListView $path
+        Update-NavigationButtons
     }
 }
 
-# Function to populate ListView
+# Function to show preview panel
+function Show-PreviewPanel {
+    if (-not $previewPanel.Visible) {
+        $previewPanel.Visible = $true
+        $splitter.Visible = $true
+        $listView.Width -= ($previewPanel.Width + $splitter.Width)
+    }
+}
+
+# Function to hide preview panel
+function Hide-PreviewPanel {
+    if ($previewPanel.Visible) {
+        $listView.Width += ($previewPanel.Width + $splitter.Width)
+        $previewPanel.Visible = $false
+        $splitter.Visible = $false
+    }
+}
+
+# Function to clear preview
+function Clear-Preview {
+    $pictureBox.Image = $null
+    $pictureBox.Visible = $false
+    $textPreview.Clear()
+    $textPreview.Visible = $false
+    $webBrowser.Visible = $false
+    $previewLabel.Visible = $true
+    $previewLabel.Text = "Select a file to preview"
+}
+
+# Function to preview file with enhanced format support
+function Show-FilePreview {
+    param ([string]$filePath)
+    
+    Clear-Preview
+    Show-PreviewPanel
+    
+    if (-not (Test-Path $filePath)) {
+        return
+    }
+    
+    $fileName = [System.IO.Path]::GetFileName($filePath)
+    $extension = [System.IO.Path]::GetExtension($filePath).ToLower()
+    $previewTitle.Text = $fileName
+    $previewLabel.Visible = $false
+    
+    switch -Regex ($extension) {
+        # Image files
+        '\.(jpg|jpeg|png|gif|bmp|ico|tiff)$' {
+            try {
+                $image = [System.Drawing.Image]::FromFile($filePath)
+                $pictureBox.Image = $image
+                $pictureBox.Visible = $true
+                $previewLabel.Text = "Size: $($image.Width)x$($image.Height)"
+                $previewLabel.Visible = $true
+            }
+            catch {
+                $previewLabel.Text = "Error loading image"
+                $previewLabel.Visible = $true
+            }
+        }
+        
+        # Text files
+        '\.(txt|log|ps1|cmd|bat|csv|json|xml|html|css|js|md|yml|yaml|ini|conf|cfg|reg)$' {
+            try {
+                $content = Get-Content -Path $filePath -Raw -ErrorAction Stop
+                $textPreview.Text = $content
+                $textPreview.Visible = $true
+                
+                # Syntax highlighting based on extension
+                switch -Regex ($extension) {
+                    '\.(ps1|cmd|bat)$' {
+                        # PowerShell/Batch highlighting (basic)
+                        $keywords = @('function', 'param', 'if', 'else', 'while', 'foreach', 'return', 'try', 'catch')
+                        foreach ($keyword in $keywords) {
+                            $textPreview.SelectionColor = [System.Drawing.Color]::Blue
+                        }
+                    }
+                    '\.(json|xml|html|css)$' {
+                        # Web format highlighting (basic)
+                        $webBrowser.Navigate($filePath)
+                        $webBrowser.Visible = $true
+                        $textPreview.Visible = $false
+                    }
+                }
+            }
+            catch {
+                $previewLabel.Text = "Error loading text file"
+                $previewLabel.Visible = $true
+            }
+        }
+        
+        # Office documents and PDFs
+        '\.(doc|docx|xls|xlsx|ppt|pptx|pdf)$' {
+            $fileInfo = Get-Item $filePath
+            $previewLabel.Text = @"
+File Type: $($extension.TrimStart('.').ToUpper())
+Size: $(Format-FileSize $fileInfo.Length)
+Created: $($fileInfo.CreationTime)
+Modified: $($fileInfo.LastWriteTime)
+"@
+            $previewLabel.Visible = $true
+        }
+        
+        # Audio files
+        '\.(mp3|wav|wma|m4a|aac)$' {
+            $previewLabel.Text = @"
+Audio File
+Type: $($extension.TrimStart('.').ToUpper())
+Size: $(Format-FileSize (Get-Item $filePath).Length)
+Double-click to play in default player
+"@
+            $previewLabel.Visible = $true
+        }
+        
+        # Video files
+        '\.(mp4|avi|mkv|wmv|mov)$' {
+            $previewLabel.Text = @"
+Video File
+Type: $($extension.TrimStart('.').ToUpper())
+Size: $(Format-FileSize (Get-Item $filePath).Length)
+Double-click to play in default player
+"@
+            $previewLabel.Visible = $true
+        }
+        
+        # Archive files
+        '\.(zip|rar|7z|tar|gz)$' {
+            try {
+                $archive = Get-Item $filePath
+                $previewLabel.Text = @"
+Archive File
+Type: $($extension.TrimStart('.').ToUpper())
+Size: $(Format-FileSize $archive.Length)
+Created: $($archive.CreationTime)
+Modified: $($archive.LastWriteTime)
+"@
+                $previewLabel.Visible = $true
+            }
+            catch {
+                $previewLabel.Text = "Error reading archive"
+                $previewLabel.Visible = $true
+            }
+        }
+        
+        default {
+            $previewLabel.Text = "Preview not available for this file type"
+            $previewLabel.Visible = $true
+        }
+    }
+}
+
+# Function to populate the ListView
 function Populate-ListView {
     param ([string]$path)
     
+    $global:currentPath = $path
     $listView.Items.Clear()
     
     try {
@@ -177,6 +482,8 @@ function Populate-ListView {
             
             $listView.Items.Add($listViewItem)
         }
+        
+        Update-NavigationButtons
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -201,7 +508,7 @@ function Add-QuickAccessButton($text, $path) {
     $button.Add_Click({
         $buttonPath = $this.Tag
         if (Test-Path -Path $buttonPath) {
-            Populate-ListView -path $buttonPath
+            Navigate-To -path $buttonPath
         } else {
             [System.Windows.Forms.MessageBox]::Show(
                 "Path does not exist: $buttonPath",
@@ -213,6 +520,7 @@ function Add-QuickAccessButton($text, $path) {
     })
     
     $quickAccessPanel.Controls.Add($button)
+    return $button
 }
 
 # Add Quick Access buttons
@@ -220,8 +528,8 @@ $quickAccessButtons = @{
     "Desktop" = [Environment]::GetFolderPath("Desktop")
     "Downloads" = [Environment]::GetFolderPath("UserProfile") + "\Downloads"
     "Documents" = [Environment]::GetFolderPath("MyDocuments")
-    "Pictures" = [Environment]::GetFolderPath("MyPictures")
     "Music" = [Environment]::GetFolderPath("MyMusic")
+    "Pictures" = [Environment]::GetFolderPath("MyPictures")
     "Videos" = [Environment]::GetFolderPath("MyVideos")
 }
 
@@ -229,9 +537,13 @@ foreach ($button in $quickAccessButtons.GetEnumerator()) {
     Add-QuickAccessButton $button.Key $button.Value
 }
 
-# Function to populate TreeView
+
+
+
+# Function to populate the TreeView
 function Populate-TreeView {
     $treeView.Nodes.Clear()
+    
     $thisPC = $treeView.Nodes.Add("This PC")
     
     Get-PSDrive -PSProvider FileSystem | ForEach-Object {
@@ -248,45 +560,279 @@ function Populate-TreeView {
     $thisPC.Expand()
 }
 
-# Event handlers
+# Event handler for TreeView node click
 $treeView.add_AfterSelect({
     $selectedNode = $treeView.SelectedNode
     if ($selectedNode.Tag) {
-        Populate-ListView -path $selectedNode.Tag
+        Navigate-To -path $selectedNode.Tag
     }
 })
 
-$listView.add_SelectedIndexChanged({
-    if ($listView.SelectedItems.Count -gt 0) {
-        $selectedItem = $listView.SelectedItems[0]
-        $itemPath = $selectedItem.Tag
-        
-        if (-not (Test-Path -Path $itemPath -PathType Container)) {
-            Show-Preview -filePath $itemPath
-        } else {
-            $noPreviewLabel.Text = "Folder: $($selectedItem.Text)`n`nContains: $(Get-ChildItem $itemPath | Measure-Object | Select-Object -ExpandProperty Count) items"
-            $noPreviewLabel.Visible = $true
-        }
-    }
-})
-
+# Event handler for ListView double-click
 $listView.add_DoubleClick({
     $selectedItem = $listView.SelectedItems[0]
     if ($selectedItem) {
         $itemPath = $selectedItem.Tag
         
         if (Test-Path -Path $itemPath -PathType Container) {
-            Populate-ListView -path $itemPath
+            Navigate-To -path $itemPath
         } else {
             Start-Process $itemPath
         }
     }
 })
 
-# Initial population
-Populate-TreeView
+# Create Preview Panel
+$previewPanel = New-Object System.Windows.Forms.Panel
+$previewPanel.Size = New-Object System.Drawing.Size(390, 510)
+$previewPanel.Location = New-Object System.Drawing.Point(780, 50)
+$previewPanel.BackColor = [System.Drawing.Color]::White
+$previewPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                       [System.Windows.Forms.AnchorStyles]::Right -bor `
+                       [System.Windows.Forms.AnchorStyles]::Bottom
+$form.Controls.Add($previewPanel)
+
+# Create Preview Controls
+$pictureBox = New-Object System.Windows.Forms.PictureBox
+$pictureBox.Size = New-Object System.Drawing.Size(380, 380)
+$pictureBox.Location = New-Object System.Drawing.Point(5, 5)
+$pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+$pictureBox.Visible = $false
+$previewPanel.Controls.Add($pictureBox)
+
+$textPreview = New-Object System.Windows.Forms.RichTextBox
+$textPreview.Size = New-Object System.Drawing.Size(380, 480)
+$textPreview.Location = New-Object System.Drawing.Point(5, 5)
+$textPreview.ReadOnly = $true
+$textPreview.Font = New-Object System.Drawing.Font("Consolas", 10)
+$textPreview.Visible = $false
+$previewPanel.Controls.Add($textPreview)
+
+$mediaPlayer = New-Object System.Windows.Forms.Panel
+$mediaPlayer.Size = New-Object System.Drawing.Size(380, 380)
+$mediaPlayer.Location = New-Object System.Drawing.Point(5, 5)
+$mediaPlayer.Visible = $false
+$previewPanel.Controls.Add($mediaPlayer)
+
+$previewLabel = New-Object System.Windows.Forms.Label
+$previewLabel.Size = New-Object System.Drawing.Size(380, 40)
+$previewLabel.Location = New-Object System.Drawing.Point(5, 5)
+$previewLabel.Text = "Select a file to preview"
+$previewLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$previewLabel.Font = New-Object System.Drawing.Font("Segoe UI", 12)
+$previewPanel.Controls.Add($previewLabel)
+
+# Function to clear preview
+function Clear-Preview {
+    $pictureBox.Image = $null
+    $pictureBox.Visible = $false
+    $textPreview.Clear()
+    $textPreview.Visible = $false
+    $mediaPlayer.Visible = $false
+    $previewLabel.Visible = $true
+    $previewLabel.Text = "Select a file to preview"
+}
+
+function Show-FilePreview {
+    param ([string]$filePath)
+    
+    Clear-Preview
+    Show-PreviewPanel
+    
+    if (-not (Test-Path $filePath)) {
+        return
+    }
+    
+    $fileName = [System.IO.Path]::GetFileName($filePath)
+    $extension = [System.IO.Path]::GetExtension($filePath).ToLower()
+    $previewTitle.Text = $fileName
+    $previewLabel.Visible = $false
+    
+    # Add folder preview at the beginning
+    if (Test-Path -Path $filePath -PathType Container) {
+        try {
+            $folder = Get-Item $filePath
+            $items = Get-ChildItem $filePath
+            $fileCount = ($items | Where-Object { -not $_.PSIsContainer }).Count
+            $folderCount = ($items | Where-Object { $_.PSIsContainer }).Count
+            
+            $previewLabel.Text = @"
+Folder: $($folder.Name)
+Created: $($folder.CreationTime)
+Modified: $($folder.LastWriteTime)
+Contains: $fileCount files, $folderCount folders
+"@
+            $previewLabel.Visible = $true
+            return
+        }
+        catch {
+            $previewLabel.Text = "Error reading folder"
+            $previewLabel.Visible = $true
+            return
+        }
+    }
+    
+    switch -Regex ($extension) {
+        # Image files
+        '\.(jpg|jpeg|png|gif|bmp|ico|tiff)$' {
+            try {
+                $image = [System.Drawing.Image]::FromFile($filePath)
+                $pictureBox.Image = $image
+                $pictureBox.Visible = $true
+                $previewLabel.Text = "Size: $($image.Width)x$($image.Height)"
+                $previewLabel.Visible = $true
+            }
+            catch {
+                $previewLabel.Text = "Error loading image"
+                $previewLabel.Visible = $true
+            }
+        }
+        
+        # Text files
+        '\.(txt|log|ps1|cmd|bat|csv|json|xml|html|css|js|md|yml|yaml|ini|conf|cfg|reg)$' {
+            try {
+                $content = Get-Content -Path $filePath -Raw -ErrorAction Stop
+                $textPreview.Text = $content
+                $textPreview.Visible = $true
+                
+                # Syntax highlighting based on extension
+                switch -Regex ($extension) {
+                    '\.(ps1|cmd|bat)$' {
+                        # PowerShell/Batch highlighting (basic)
+                        $keywords = @('function', 'param', 'if', 'else', 'while', 'foreach', 'return', 'try', 'catch')
+                        foreach ($keyword in $keywords) {
+                            $textPreview.SelectionColor = [System.Drawing.Color]::Blue
+                        }
+                    }
+                    '\.(json|xml|html|css)$' {
+                        # Web format highlighting (basic)
+                        $webBrowser.Navigate($filePath)
+                        $webBrowser.Visible = $true
+                        $textPreview.Visible = $false
+                    }
+                }
+            }
+            catch {
+                $previewLabel.Text = "Error loading text file"
+                $previewLabel.Visible = $true
+            }
+        }
+        
+        # Office documents and PDFs
+        '\.(doc|docx|xls|xlsx|ppt|pptx|pdf)$' {
+            $fileInfo = Get-Item $filePath
+            $previewLabel.Text = @"
+File Type: $($extension.TrimStart('.').ToUpper())
+Size: $(Format-FileSize $fileInfo.Length)
+Created: $($fileInfo.CreationTime)
+Modified: $($fileInfo.LastWriteTime)
+"@
+            $previewLabel.Visible = $true
+        }
+        
+        # Audio files
+        '\.(mp3|wav|wma|m4a|aac)$' {
+            $previewLabel.Text = @"
+Audio File
+Type: $($extension.TrimStart('.').ToUpper())
+Size: $(Format-FileSize (Get-Item $filePath).Length)
+Double-click to play in default player
+"@
+            $previewLabel.Visible = $true
+        }
+        
+        # Video files
+        '\.(mp4|avi|mkv|wmv|mov)$' {
+            $previewLabel.Text = @"
+Video File
+Type: $($extension.TrimStart('.').ToUpper())
+Size: $(Format-FileSize (Get-Item $filePath).Length)
+Double-click to play in default player
+"@
+            $previewLabel.Visible = $true
+        }
+        
+        # Archive files
+        '\.(zip|rar|7z|tar|gz)$' {
+            try {
+                $archive = Get-Item $filePath
+                $previewLabel.Text = @"
+Archive File
+Type: $($extension.TrimStart('.').ToUpper())
+Size: $(Format-FileSize $archive.Length)
+Created: $($archive.CreationTime)
+Modified: $($archive.LastWriteTime)
+"@
+                $previewLabel.Visible = $true
+            }
+            catch {
+                $previewLabel.Text = "Error reading archive"
+                $previewLabel.Visible = $true
+            }
+        }
+        
+        default {
+            $previewLabel.Text = "Preview not available for this file type"
+            $previewLabel.Visible = $true
+        }
+    }
+}
+
+# Event handler for ListView selection changed
+$listView.add_SelectedIndexChanged({
+    Update-NavigationButtons
+})
+
+# Event handler for ListView click
+$listView.add_MouseClick({
+    param($sender, $e)
+    
+    $item = $listView.GetItemAt($e.X, $e.Y)
+    if ($item -ne $null) {
+        $itemPath = $item.Tag
+        Show-FilePreview -filePath $itemPath
+    }
+})
+
+# Event handler for ListView selection changed
+$listView.add_SelectedIndexChanged({
+    Update-NavigationButtons
+})
+
+# Event handler for ListView click
+$listView.add_MouseClick({
+    param($sender, $e)
+    
+    $item = $listView.GetItemAt($e.X, $e.Y)
+    if ($item -ne $null) {
+        $itemPath = $item.Tag
+        Show-FilePreview -filePath $itemPath
+    }
+})
+
+# Event handler for ListView double-click
+$listView.add_DoubleClick({
+    $selectedItem = $listView.SelectedItems[0]
+    if ($selectedItem) {
+        $itemPath = $selectedItem.Tag
+        
+        if (Test-Path -Path $itemPath -PathType Container) {
+            Navigate-To -path $itemPath
+            # Keep preview visible when navigating folders
+        } else {
+            Start-Process $itemPath
+        }
+    }
+})
+
+# Initialize navigation with desktop path
 $desktopPath = [Environment]::GetFolderPath("Desktop")
-Populate-ListView -path $desktopPath
+[void]$global:navigationHistory.Add($desktopPath)
+$global:currentIndex = 0
+
+# Initial setup
+Populate-TreeView
+Populate-ListView $desktopPath
 
 # Show the form
 [void]$form.ShowDialog()
