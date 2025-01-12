@@ -8,10 +8,24 @@ $form.Text = "PowerShell File Explorer"
 $form.Size = New-Object System.Drawing.Size(900, 600)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::LightGray
+$form.MinimumSize = New-Object System.Drawing.Size(800, 500)
+
+# Create TableLayoutPanel to manage layout
+$tableLayoutPanel = New-Object System.Windows.Forms.TableLayoutPanel
+$tableLayoutPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$tableLayoutPanel.RowCount = 2
+$tableLayoutPanel.ColumnCount = 2
+$tableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 30)))
+$tableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 70)))
+$tableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))
+$tableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+$form.Controls.Add($tableLayoutPanel)
 
 # Create MenuStrip
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
-$form.Controls.Add($menuStrip)
+$menuStrip.Dock = [System.Windows.Forms.DockStyle]::Top
+$tableLayoutPanel.Controls.Add($menuStrip, 0, 0)
+$tableLayoutPanel.SetColumnSpan($menuStrip, 2)
 
 # File Menu
 $fileMenu = New-Object System.Windows.Forms.ToolStripMenuItem
@@ -100,32 +114,34 @@ $viewMenu.DropDownItems.Add($refresh)
 # Add menus to MenuStrip
 $menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu))
 
-# Create Quick Access panel with increased height (adjusted for MenuStrip)
+# Create left panel container
+$leftPanel = New-Object System.Windows.Forms.Panel
+$leftPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$tableLayoutPanel.Controls.Add($leftPanel, 0, 1)
+
+# Create Quick Access panel
 $quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$quickAccessPanel.Size = New-Object System.Drawing.Size(250, 220)
-$quickAccessPanel.Location = New-Object System.Drawing.Point(10, 50)  # Adjusted Y position
+$quickAccessPanel.Dock = [System.Windows.Forms.DockStyle]::Top
+$quickAccessPanel.Height = 220
 $quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
 $quickAccessPanel.WrapContents = $false
 $quickAccessPanel.AutoSize = $false
-$form.Controls.Add($quickAccessPanel)
+$leftPanel.Controls.Add($quickAccessPanel)
 
-# Create a TreeView to display directories (left side)
+# Create TreeView
 $treeView = New-Object System.Windows.Forms.TreeView
-$treeView.Size = New-Object System.Drawing.Size(250, 290)
-$treeView.Location = New-Object System.Drawing.Point(10, 270)  # Adjusted Y position
+$treeView.Dock = [System.Windows.Forms.DockStyle]::Fill
 $treeView.Scrollable = $true
-$form.Controls.Add($treeView)
+$leftPanel.Controls.Add($treeView)
 
-# Create a ListView to display files (right side)
+# Create ListView
 $listView = New-Object System.Windows.Forms.ListView
-$listView.Size = New-Object System.Drawing.Size(600, 510)
-$listView.Location = New-Object System.Drawing.Point(270, 50)  # Adjusted Y position
+$listView.Dock = [System.Windows.Forms.DockStyle]::Fill
 $listView.View = [System.Windows.Forms.View]::Details
 $listView.FullRowSelect = $true
 $listView.GridLines = $true
-$form.Controls.Add($listView)
+$tableLayoutPanel.Controls.Add($listView, 1, 1)
 
-# Rest of your original code remains exactly the same from here
 # Add columns to ListView
 $columns = @(
     @{Name="Name"; Width=250},
@@ -200,8 +216,6 @@ function Add-QuickAccessButton($text, $path) {
     $button.Height = 30
     $button.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
     $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    
-    # Store the path in the button's Tag property
     $button.Tag = $path
     
     $button.Add_Click({
@@ -222,7 +236,7 @@ function Add-QuickAccessButton($text, $path) {
     return $button
 }
 
-# Add Quick Access buttons with paths using environment variables
+# Add Quick Access buttons
 $quickAccessButtons = @{
     "Desktop" = [Environment]::GetFolderPath("Desktop")
     "Downloads" = [Environment]::GetFolderPath("UserProfile") + "\Downloads"
@@ -258,7 +272,7 @@ function Populate-TreeView {
     $thisPC.Expand()
 }
 
-# Event handler for TreeView node click
+# TreeView event handler
 $treeView.add_AfterSelect({
     $selectedNode = $treeView.SelectedNode
     if ($selectedNode.Tag) {
@@ -266,7 +280,7 @@ $treeView.add_AfterSelect({
     }
 })
 
-# Event handler for ListView double-click
+# ListView event handler
 $listView.add_DoubleClick({
     $selectedItem = $listView.SelectedItems[0]
     if ($selectedItem) {
@@ -280,10 +294,17 @@ $listView.add_DoubleClick({
     }
 })
 
-# Initial TreeView population
-Populate-TreeView
+# Form resize event handler
+$form.Add_Resize({
+    $totalWidth = $listView.ClientSize.Width
+    $listView.Columns[0].Width = [Math]::Floor($totalWidth * 0.4)
+    $listView.Columns[1].Width = [Math]::Floor($totalWidth * 0.15)
+    $listView.Columns[2].Width = [Math]::Floor($totalWidth * 0.15)
+    $listView.Columns[3].Width = [Math]::Floor($totalWidth * 0.3)
+})
 
-# Initial ListView population (using Desktop path from environment variable)
+# Initialize
+Populate-TreeView
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 Populate-ListView -path $desktopPath
 
