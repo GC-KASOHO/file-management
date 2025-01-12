@@ -223,6 +223,26 @@ $btnDown.Add_Click({
 # Add all items to MenuStrip in order
 $menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu, $btnBack, $btnForward, $btnUp, $btnDown))
 
+# Create search box in MenuStrip
+$searchBox = New-Object System.Windows.Forms.ToolStripTextBox
+$searchBox.Size = New-Object System.Drawing.Size(200, 25)
+$searchBox.Name = "SearchBox"
+$searchBox.PlaceholderText = "Search..."
+
+# Create search button in MenuStrip
+$searchButton = New-Object System.Windows.Forms.ToolStripButton
+$searchButton.Text = "Search"
+$searchButton.DisplayStyle = [System.Windows.Forms.ToolStripItemDisplayStyle]::Text
+
+# Add spring to push search controls to right
+$spring = New-Object System.Windows.Forms.ToolStripStatusLabel
+$spring.Spring = $true
+
+# Add search controls to MenuStrip
+$menuStrip.Items.Add($spring)
+$menuStrip.Items.Add($searchBox)
+$menuStrip.Items.Add($searchButton)
+
 # Create Quick Access panel
 $quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $quickAccessPanel.Size = New-Object System.Drawing.Size(250, 220)
@@ -268,6 +288,64 @@ $columns = @(
 foreach ($column in $columns) {
     $listView.Columns.Add($column.Name, $column.Width)
 }
+
+#search files function
+function Search-Files {
+    param ([string]$searchTerm)
+    
+    if ([string]::IsNullOrWhiteSpace($searchTerm)) {
+        Populate-ListView $global:currentPath
+        return
+    }
+    
+    $listView.Items.Clear()
+    
+    try {
+        $searchResults = Get-ChildItem -Path $global:currentPath -Recurse -ErrorAction SilentlyContinue | 
+            Where-Object { $_.Name -like "*$searchTerm*" }
+        
+        foreach ($item in $searchResults) {
+            $listViewItem = New-Object System.Windows.Forms.ListViewItem($item.Name)
+            
+            if ($item.PSIsContainer) {
+                $type = "Folder"
+                $size = ""
+            } else {
+                $type = if ($item.Extension) { $item.Extension.TrimStart(".").ToUpper() } else { "File" }
+                $size = Format-FileSize $item.Length
+            }
+            
+            $listViewItem.SubItems.Add($type)
+            $listViewItem.SubItems.Add($size)
+            $listViewItem.SubItems.Add($item.LastWriteTime.ToString("g"))
+            $listViewItem.Tag = $item.FullName
+            
+            $listView.Items.Add($listViewItem)
+        }
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Error performing search: $($_.Exception.Message)",
+            "Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+    }
+}
+
+#search button click event
+$searchButton.Add_Click({
+    Search-Files $searchBox.Text
+})
+
+#search box key
+$searchBox.Add_KeyPress({
+    param($sender, $e)
+    if ($e.KeyChar -eq [System.Windows.Forms.Keys]::Enter) {
+        $e.Handled = $true
+        Search-Files $searchBox.Text
+    }
+})
 
 # Function to format file size
 function Format-FileSize {
