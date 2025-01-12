@@ -11,7 +11,6 @@ $form.BackColor = [System.Drawing.Color]::LightGray
 
 # Create MenuStrip
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
-$menuStrip.Dock = [System.Windows.Forms.DockStyle]::Top
 $form.Controls.Add($menuStrip)
 
 # File Menu
@@ -101,39 +100,32 @@ $viewMenu.DropDownItems.Add($refresh)
 # Add menus to MenuStrip
 $menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu))
 
-# Create a container panel for the left side
-$leftPanel = New-Object System.Windows.Forms.Panel
-$leftPanel.Size = New-Object System.Drawing.Size(500, $form.ClientSize.Height - $menuStrip.Height)
-$leftPanel.Location = New-Object System.Drawing.Point(0, $menuStrip.Height)
-$leftPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
-$form.Controls.Add($leftPanel)
-
-# Create Quick Access panel
+# Create Quick Access panel with increased height (adjusted for MenuStrip)
 $quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$quickAccessPanel.Size = New-Object System.Drawing.Size(500, 600)
-$quickAccessPanel.Location = New-Object System.Drawing.Point(0, 0)
+$quickAccessPanel.Size = New-Object System.Drawing.Size(250, 220)
+$quickAccessPanel.Location = New-Object System.Drawing.Point(10, 50)  # Adjusted Y position
 $quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
 $quickAccessPanel.WrapContents = $false
 $quickAccessPanel.AutoSize = $false
-$quickAccessPanel.Dock = [System.Windows.Forms.DockStyle]::Top
-$leftPanel.Controls.Add($quickAccessPanel)
+$form.Controls.Add($quickAccessPanel)
 
-# Create a TreeView to display directories
+# Create a TreeView to display directories (left side)
 $treeView = New-Object System.Windows.Forms.TreeView
-$treeView.Dock = [System.Windows.Forms.DockStyle]::Fill
+$treeView.Size = New-Object System.Drawing.Size(250, 290)
+$treeView.Location = New-Object System.Drawing.Point(10, 270)  # Adjusted Y position
 $treeView.Scrollable = $true
-$leftPanel.Controls.Add($treeView)
+$form.Controls.Add($treeView)
 
-# Create a ListView to display files
+# Create a ListView to display files (right side)
 $listView = New-Object System.Windows.Forms.ListView
-$listView.Location = New-Object System.Drawing.Point(250, $menuStrip.Height)
-$listView.Size = New-Object System.Drawing.Size($form.ClientSize.Width - 250, $form.ClientSize.Height - $menuStrip.Height)
-$listView.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+$listView.Size = New-Object System.Drawing.Size(600, 510)
+$listView.Location = New-Object System.Drawing.Point(270, 50)  # Adjusted Y position
 $listView.View = [System.Windows.Forms.View]::Details
 $listView.FullRowSelect = $true
 $listView.GridLines = $true
 $form.Controls.Add($listView)
 
+# Rest of your original code remains exactly the same from here
 # Add columns to ListView
 $columns = @(
     @{Name="Name"; Width=250},
@@ -208,7 +200,6 @@ function Add-QuickAccessButton($text, $path) {
     $button.Height = 30
     $button.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
     $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $button.Margin = New-Object System.Windows.Forms.Padding(5)
     
     # Store the path in the button's Tag property
     $button.Tag = $path
@@ -295,17 +286,6 @@ Populate-TreeView
 # Initial ListView population (using Desktop path from environment variable)
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 Populate-ListView -path $desktopPath
-
-# Add resize event handler to adjust column widths
-$form.Add_Resize({
-    if ($listView.Columns.Count -gt 0) {
-        $totalWidth = $listView.ClientSize.Width
-        $lastColumnWidth = $totalWidth - ($listView.Columns[0].Width + $listView.Columns[1].Width + $listView.Columns[2].Width)
-        if ($lastColumnWidth -gt 150) {
-            $listView.Columns[3].Width = $lastColumnWidth
-        }
-    }
-})
 
 # Show the form
 [void]$form.ShowDialog()
