@@ -8,6 +8,18 @@ $form.Text = "PowerShell File Explorer"
 $form.Size = New-Object System.Drawing.Size(900, 600)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::LightGray
+$form.MinimumSize = New-Object System.Drawing.Size(600, 400)  # Set minimum size
+
+# Create TableLayoutPanel for better resizing
+$tableLayoutPanel = New-Object System.Windows.Forms.TableLayoutPanel
+$tableLayoutPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$tableLayoutPanel.ColumnCount = 2
+$tableLayoutPanel.RowCount = 2
+$tableLayoutPanel.CellBorderStyle = [System.Windows.Forms.TableLayoutPanelCellBorderStyle]::None
+$tableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 30)))
+$tableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 70)))
+$tableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+$tableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))
 
 # Create MenuStrip
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
@@ -107,26 +119,24 @@ $iconsViewItem.Add_Click({
     $statusLabel.Text = "Switched to icons view"
 })
 
-# Create TreeView and ListBox
+# Create TreeView and ListBox with Dock property
 $treeView = New-Object System.Windows.Forms.TreeView
-$treeView.Size = New-Object System.Drawing.Size(250, 500)
-$treeView.Location = New-Object System.Drawing.Point(10, 50)
+$treeView.Dock = [System.Windows.Forms.DockStyle]::Fill
 $treeView.Scrollable = $true
-$form.Controls.Add($treeView)
 
 $listBox = New-Object System.Windows.Forms.ListBox
-$listBox.Size = New-Object System.Drawing.Size(600, 500)
-$listBox.Location = New-Object System.Drawing.Point(270, 50)
-$form.Controls.Add($listBox)
+$listBox.Dock = [System.Windows.Forms.DockStyle]::Fill
 
 # Create status label
 $statusLabel = New-Object System.Windows.Forms.Label
-$statusLabel.Location = New-Object System.Drawing.Point(10, 530)
-$statusLabel.Size = New-Object System.Drawing.Size(860, 20)
+$statusLabel.Dock = [System.Windows.Forms.DockStyle]::Fill
 $statusLabel.Text = "Ready"
-$statusLabel.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor 
-                     [System.Windows.Forms.AnchorStyles]::Left -bor 
-                     [System.Windows.Forms.AnchorStyles]::Right
+
+# Add controls to TableLayoutPanel
+$tableLayoutPanel.Controls.Add($treeView, 0, 0)
+$tableLayoutPanel.Controls.Add($listBox, 1, 0)
+$tableLayoutPanel.SetColumnSpan($statusLabel, 2)
+$tableLayoutPanel.Controls.Add($statusLabel, 0, 1)
 
 # Add menu items to their menus
 $fileMenu.DropDownItems.AddRange(@($newFolderItem, $refreshItem, 
@@ -136,9 +146,6 @@ $viewMenu.DropDownItems.AddRange(@($detailsViewItem, $iconsViewItem))
 
 # Add menus to menu strip
 $menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu))
-
-# Add controls to form
-$form.Controls.AddRange(@($menuStrip, $statusLabel))
 
 # Function to refresh the explorer
 function RefreshExplorer {
@@ -171,6 +178,10 @@ Get-PSDrive -PSProvider FileSystem | ForEach-Object {
     $rootNode.Nodes.Add($driveNode)
 }
 
+# Add MenuStrip and TableLayoutPanel to form
+$form.Controls.Add($menuStrip)
+$form.Controls.Add($tableLayoutPanel)
+
 # Show the form
 [void]$form.ShowDialog()
-# PIADOZO MENU BAR
+#Piadozo Menu Bar
