@@ -1,25 +1,15 @@
 ﻿# Import required assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName Microsoft.VisualBasic
 
 # Create a form for the File Explorer
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "PowerShell File Explorer"
 $form.Size = New-Object System.Drawing.Size(900, 600)
 $form.StartPosition = "CenterScreen"
-$form.BackColor = [System.Drawing.Color]::LightGray
-$form.MinimumSize = New-Object System.Drawing.Size(600, 400)  # Set minimum size
-
-# Create TableLayoutPanel for better resizing
-$tableLayoutPanel = New-Object System.Windows.Forms.TableLayoutPanel
-$tableLayoutPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-$tableLayoutPanel.ColumnCount = 2
-$tableLayoutPanel.RowCount = 2
-$tableLayoutPanel.CellBorderStyle = [System.Windows.Forms.TableLayoutPanelCellBorderStyle]::None
-$tableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 30)))
-$tableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 70)))
-$tableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-$tableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))
+$form.BackColor = [System.Drawing.Color]::WhiteSmoke
+$form.MinimumSize = New-Object System.Drawing.Size(600, 400)
 
 # Create MenuStrip
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
@@ -33,16 +23,12 @@ $newFolderItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $newFolderItem.Text = "New Folder"
 $newFolderItem.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::N
 $newFolderItem.Add_Click({
-    $selectedNode = $treeView.SelectedNode
-    if ($selectedNode) {
+    if ($global:currentPath) {
         $folderName = [Microsoft.VisualBasic.Interaction]::InputBox("Enter folder name:", "New Folder", "New Folder")
         if ($folderName) {
-            $path = Join-Path $selectedNode.Tag $folderName
+            $path = Join-Path $global:currentPath $folderName
             New-Item -Path $path -ItemType Directory
-            $newNode = New-Object System.Windows.Forms.TreeNode
-            $newNode.Text = $folderName
-            $newNode.Tag = $path
-            $selectedNode.Nodes.Add($newNode)
+            Populate-ListView -path $global:currentPath
             $statusLabel.Text = "Created new folder: $folderName"
         }
     }
@@ -52,8 +38,10 @@ $refreshItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $refreshItem.Text = "Refresh"
 $refreshItem.ShortcutKeys = [System.Windows.Forms.Keys]::F5
 $refreshItem.Add_Click({
-    RefreshExplorer
-    $statusLabel.Text = "View refreshed"
+    if ($global:currentPath) {
+        Populate-ListView -path $global:currentPath
+        $statusLabel.Text = "View refreshed"
+    }
 })
 
 $exitItem = New-Object System.Windows.Forms.ToolStripMenuItem
@@ -69,17 +57,17 @@ $deleteItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $deleteItem.Text = "Delete"
 $deleteItem.ShortcutKeys = [System.Windows.Forms.Keys]::Delete
 $deleteItem.Add_Click({
-    if ($listBox.SelectedItem) {
-        $selectedPath = Join-Path $currentPath $listBox.SelectedItem
+    $selectedItem = $listView.SelectedItems[0]
+    if ($selectedItem) {
         $result = [System.Windows.Forms.MessageBox]::Show(
-            "Are you sure you want to delete $($listBox.SelectedItem)?",
+            "Are you sure you want to delete $($selectedItem.Text)?",
             "Confirm Delete",
             [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Warning)
         if ($result -eq 'Yes') {
-            Remove-Item $selectedPath -Force -Recurse
-            RefreshExplorer
-            $statusLabel.Text = "Deleted: $($listBox.SelectedItem)"
+            Remove-Item $selectedItem.Tag -Force -Recurse
+            Populate-ListView -path $global:currentPath
+            $statusLabel.Text = "Deleted: $($selectedItem.Text)"
         }
     }
 })
@@ -88,14 +76,15 @@ $renameItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $renameItem.Text = "Rename"
 $renameItem.ShortcutKeys = [System.Windows.Forms.Keys]::F2
 $renameItem.Add_Click({
-    if ($listBox.SelectedItem) {
-        $oldName = $listBox.SelectedItem
+    $selectedItem = $listView.SelectedItems[0]
+    if ($selectedItem) {
+        $oldName = $selectedItem.Text
         $newName = [Microsoft.VisualBasic.Interaction]::InputBox("Enter new name:", "Rename", $oldName)
         if ($newName -and ($newName -ne $oldName)) {
-            $oldPath = Join-Path $currentPath $oldName
-            $newPath = Join-Path $currentPath $newName
+            $oldPath = $selectedItem.Tag
+            $newPath = Join-Path (Split-Path $oldPath) $newName
             Rename-Item -Path $oldPath -NewName $newName
-            RefreshExplorer
+            Populate-ListView -path $global:currentPath
             $statusLabel.Text = "Renamed: $oldName to $newName"
         }
     }
@@ -108,64 +97,16 @@ $viewMenu.Text = "View"
 $detailsViewItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $detailsViewItem.Text = "Details View"
 $detailsViewItem.Add_Click({
-    # TODO: Implement detailed view
+    $listView.View = [System.Windows.Forms.View]::Details
     $statusLabel.Text = "Switched to details view"
 })
 
 $iconsViewItem = New-Object System.Windows.Forms.ToolStripMenuItem
-$iconsViewItem.Text = "Icons View"
+$iconsViewItem.Text = "Large Icons"
 $iconsViewItem.Add_Click({
-    # TODO: Implement icons view
-    $statusLabel.Text = "Switched to icons view"
+    $listView.View = [System.Windows.Forms.View]::LargeIcon
+    $statusLabel.Text = "Switched to large icons view"
 })
-
-# Create TreeView and ListBox with Dock property
-$form.BackColor = [System.Drawing.Color]::WhiteSmoke
-
-# Create Quick Access panel with increased height
-$quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$quickAccessPanel.Size = New-Object System.Drawing.Size(250, 220)
-$quickAccessPanel.Location = New-Object System.Drawing.Point(10, 30)
-$quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
-$quickAccessPanel.WrapContents = $false
-$quickAccessPanel.AutoSize = $false
-$quickAccessPanel.BackColor = [System.Drawing.Color]::WhiteSmoke
-$form.Controls.Add($quickAccessPanel)
-
-# Create This PC Button
-$thisPCButton = New-Object System.Windows.Forms.Button
-$thisPCButton.Text = "This PC ▶"
-$thisPCButton.Width = 240
-$thisPCButton.Height = 30
-$thisPCButton.Location = New-Object System.Drawing.Point(13, 250)
-$thisPCButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Popup
-$thisPCButton.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-$thisPCButton.BackColor = [System.Drawing.Color]::LightGray
-$form.Controls.Add($thisPCButton)
-
-# Create a TreeView to display directories (left side)
-$treeView = New-Object System.Windows.Forms.TreeView
-$treeView.Dock = [System.Windows.Forms.DockStyle]::Fill
-$treeView.Size = New-Object System.Drawing.Size(250, 260)
-$treeView.Location = New-Object System.Drawing.Point(10, 280)
-$treeView.Scrollable = $true
-$treeView.Visible = $false
-$treeView.BackColor = [System.Drawing.Color]::WhiteSmoke
-$form.Controls.Add($treeView)
-
-$listBox = New-Object System.Windows.Forms.ListBox
-$listBox.Dock = [System.Windows.Forms.DockStyle]::Fill
-
-# Create status label
-$statusLabel = New-Object System.Windows.Forms.Label
-$statusLabel.Dock = [System.Windows.Forms.DockStyle]::Fill
-$statusLabel.Text = "Ready"
-
-# Add controls to TableLayoutPanel
-$tableLayoutPanel.Controls.Add($treeView, 0, 0)
-$tableLayoutPanel.Controls.Add($listBox, 1, 0)
-$tableLayoutPanel.SetColumnSpan($statusLabel, 2)
-$tableLayoutPanel.Controls.Add($statusLabel, 0, 1)
 
 # Add menu items to their menus
 $fileMenu.DropDownItems.AddRange(@($newFolderItem, $refreshItem, 
@@ -176,49 +117,63 @@ $viewMenu.DropDownItems.AddRange(@($detailsViewItem, $iconsViewItem))
 # Add menus to menu strip
 $menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu))
 
-# Function to refresh the explorer
-function RefreshExplorer {
-    if ($treeView.SelectedNode) {
-        $currentPath = $treeView.SelectedNode.Tag
-        $listBox.Items.Clear()
-        Get-ChildItem -Path $currentPath | ForEach-Object {
-            $listBox.Items.Add($_.Name)
-        }
-    }
-}
+# Create main TableLayoutPanel
+$mainTableLayoutPanel = New-Object System.Windows.Forms.TableLayoutPanel
+$mainTableLayoutPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$mainTableLayoutPanel.ColumnCount = 2
+$mainTableLayoutPanel.RowCount = 2
+$mainTableLayoutPanel.CellBorderStyle = [System.Windows.Forms.TableLayoutPanelCellBorderStyle]::None
+$mainTableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 30)))
+$mainTableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 70)))
+$mainTableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+$mainTableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))
 
-# TreeView node selection event
-$treeView.Add_AfterSelect({
-    $currentPath = $this.SelectedNode.Tag
-    RefreshExplorer
-})
+# Create left panel TableLayoutPanel
+$leftTableLayoutPanel = New-Object System.Windows.Forms.TableLayoutPanel
+$leftTableLayoutPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$leftTableLayoutPanel.ColumnCount = 1
+$leftTableLayoutPanel.RowCount = 3
+$leftTableLayoutPanel.CellBorderStyle = [System.Windows.Forms.TableLayoutPanelCellBorderStyle]::None
+$leftTableLayoutPanel.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+$leftTableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 220))) # QuickAccess
+$leftTableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 35)))  # This PC Button
+$leftTableLayoutPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # TreeView
 
-# Initialize root node (My Computer)
-$rootNode = New-Object System.Windows.Forms.TreeNode
-$rootNode.Text = "My Computer"
-$rootNode.Tag = "\\"
-$treeView.Nodes.Add($rootNode)
+# Create Quick Access panel
+$quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+$quickAccessPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$quickAccessPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+$quickAccessPanel.WrapContents = $false
+$quickAccessPanel.AutoScroll = $true
+$quickAccessPanel.BackColor = [System.Drawing.Color]::WhiteSmoke
 
-# Populate drives
-Get-PSDrive -PSProvider FileSystem | ForEach-Object {
-    $driveNode = New-Object System.Windows.Forms.TreeNode
-    $driveNode.Text = $_.Name + ":\"
-    $driveNode.Tag = $_.Root
-    $rootNode.Nodes.Add($driveNode)
-}
+# Create This PC Button
+$thisPCButton = New-Object System.Windows.Forms.Button
+$thisPCButton.Dock = [System.Windows.Forms.DockStyle]::Fill
+$thisPCButton.Text = "This PC ▶"
+$thisPCButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Popup
+$thisPCButton.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$thisPCButton.BackColor = [System.Drawing.Color]::LightGray
 
-# Add MenuStrip and TableLayoutPanel to form
-$form.Controls.Add($menuStrip)
-$form.Controls.Add($tableLayoutPanel)
-# Create a ListView to display files (right side)
+# Create TreeView
+$treeView = New-Object System.Windows.Forms.TreeView
+$treeView.Dock = [System.Windows.Forms.DockStyle]::Fill
+$treeView.Scrollable = $true
+$treeView.Visible = $false
+$treeView.BackColor = [System.Drawing.Color]::WhiteSmoke
+
+# Create ListView
 $listView = New-Object System.Windows.Forms.ListView
-$listView.Size = New-Object System.Drawing.Size(600, 510)
-$listView.Location = New-Object System.Drawing.Point(270, 30)
+$listView.Dock = [System.Windows.Forms.DockStyle]::Fill
 $listView.View = [System.Windows.Forms.View]::Details
 $listView.FullRowSelect = $true
 $listView.GridLines = $true
 $listView.BackColor = [System.Drawing.Color]::WhiteSmoke
-$form.Controls.Add($listView)
+
+# Create status label
+$statusLabel = New-Object System.Windows.Forms.Label
+$statusLabel.Dock = [System.Windows.Forms.DockStyle]::Fill
+$statusLabel.Text = "Ready"
 
 # Add columns to ListView
 $columns = @(
@@ -231,6 +186,20 @@ $columns = @(
 foreach ($column in $columns) {
     $listView.Columns.Add($column.Name, $column.Width)
 }
+
+# Add controls to left panel
+$leftTableLayoutPanel.Controls.Add($quickAccessPanel, 0, 0)
+$leftTableLayoutPanel.Controls.Add($thisPCButton, 0, 1)
+$leftTableLayoutPanel.Controls.Add($treeView, 0, 2)
+
+# Add controls to main panel
+$mainTableLayoutPanel.Controls.Add($leftTableLayoutPanel, 0, 0)
+$mainTableLayoutPanel.Controls.Add($listView, 1, 0)
+$mainTableLayoutPanel.Controls.Add($statusLabel, 0, 1)
+$mainTableLayoutPanel.SetColumnSpan($statusLabel, 2)
+
+# [Previous functions remain the same: Get-CurrentDrives, Format-FileSize, etc.]
+# [Include all the previous functions here exactly as they were]
 
 # Create a timer for drive monitoring
 $driveTimer = New-Object System.Windows.Forms.Timer
@@ -305,6 +274,7 @@ function Populate-ListView {
             
             $listView.Items.Add($listViewItem)
         }
+        $statusLabel.Text = "Current path: $path"
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -313,6 +283,7 @@ function Populate-ListView {
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         )
+        $statusLabel.Text = "Error accessing path: $path"
     }
 }
 
@@ -320,7 +291,7 @@ function Populate-ListView {
 function Add-QuickAccessButton($text, $path) {
     $button = New-Object System.Windows.Forms.Button
     $button.Text = $text
-    $button.Width = 240
+    $button.Width = 230  # Slightly smaller to account for scrollbar
     $button.Height = 30
     $button.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
     $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Popup
@@ -347,7 +318,7 @@ function Add-QuickAccessButton($text, $path) {
     return $button
 }
 
-# Add Quick Access buttons with paths using environment variables
+# Add Quick Access buttons
 $quickAccessButtons = @{
     "Desktop" = [Environment]::GetFolderPath("Desktop")
     "Downloads" = [Environment]::GetFolderPath("UserProfile") + "\Downloads"
@@ -374,8 +345,6 @@ function Populate-TreeView {
                 $subNode = $driveNode.Nodes.Add($_.Name)
                 $subNode.Tag = $_.FullName
             }
-            # Auto-expand drive nodes
-
         } catch {}
     }
 }
@@ -418,14 +387,123 @@ $listView.add_DoubleClick({
     }
 })
 
+# Event handler for ListView column click (sorting)
+$listView.Add_ColumnClick({
+    param($sender, $e)
+    
+    $column = $e.Column
+    $listView = $sender
+    
+    # If current sorting column is different from clicked column, sort ascending
+    if ($script:sortColumn -ne $column) {
+        $script:sortAscending = $true
+    } else {
+        # If same column, toggle sort direction
+        $script:sortAscending = !$script:sortAscending
+    }
+    
+    $script:sortColumn = $column
+    
+    # Sort the items
+    $listView.ListViewItemSorter = New-Object System.Windows.Forms.ListViewItemComparer($column, $script:sortAscending)
+    $listView.Sort()
+})
+
+# Custom comparer for ListView sorting
+Add-Type -TypeDefinition @"
+using System;
+using System.Collections;
+using System.Windows.Forms;
+
+public class ListViewItemComparer : IComparer
+{
+    private int col;
+    private bool ascending;
+    
+    public ListViewItemComparer(int column, bool asc)
+    {
+        col = column;
+        ascending = asc;
+    }
+    
+    public int Compare(object x, object y)
+    {
+        ListViewItem itemX = (ListViewItem)x;
+        ListViewItem itemY = (ListViewItem)y;
+        
+        string textX = col == 0 ? itemX.Text : itemX.SubItems[col].Text;
+        string textY = col == 0 ? itemY.Text : itemY.SubItems[col].Text;
+        
+        // Handle size column specially
+        if (col == 2)
+        {
+            // If both are folders (empty size), sort by name
+            if (string.IsNullOrEmpty(textX) && string.IsNullOrEmpty(textY))
+                return ascending ? 
+                    string.Compare(itemX.Text, itemY.Text) : 
+                    string.Compare(itemY.Text, itemX.Text);
+            
+            // Folders always come before files
+            if (string.IsNullOrEmpty(textX)) return ascending ? -1 : 1;
+            if (string.IsNullOrEmpty(textY)) return ascending ? 1 : -1;
+            
+            // Try to parse the size values
+            try {
+                double sizeX = ParseSize(textX);
+                double sizeY = ParseSize(textY);
+                return ascending ? 
+                    sizeX.CompareTo(sizeY) : 
+                    sizeY.CompareTo(sizeX);
+            }
+            catch {
+                return ascending ? 
+                    string.Compare(textX, textY) : 
+                    string.Compare(textY, textX);
+            }
+        }
+        
+        return ascending ? 
+            string.Compare(textX, textY) : 
+            string.Compare(textY, textX);
+    }
+    
+    private double ParseSize(string size)
+    {
+        string[] parts = size.Split(' ');
+        if (parts.Length != 2) return 0;
+        
+        double value = Convert.ToDouble(parts[0]);
+        string unit = parts[1].ToUpper();
+        
+        switch (unit)
+        {
+            case "B": return value;
+            case "KB": return value * 1024;
+            case "MB": return value * 1024 * 1024;
+            case "GB": return value * 1024 * 1024 * 1024;
+            case "TB": return value * 1024 * 1024 * 1024 * 1024;
+            default: return 0;
+        }
+    }
+}
+"@
+
 # Form closing event to clean up timer
 $form.Add_FormClosing({
     $driveTimer.Stop()
 })
 
+# Add MenuStrip and main TableLayoutPanel to form
+$form.Controls.Add($menuStrip)
+$form.Controls.Add($mainTableLayoutPanel)
+
 # Initial ListView population (using Desktop path from environment variable)
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 Populate-ListView -path $desktopPath
+
+# Initialize sorting variables
+$script:sortColumn = 0
+$script:sortAscending = $true
 
 # Show the form
 [void]$form.ShowDialog()
