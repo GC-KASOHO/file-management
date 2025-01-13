@@ -624,7 +624,7 @@ foreach ($column in $columns) {
     $listView.Columns.Add($column.Name, $column.Width)
 }
 
-#search files function
+# Update search function
 function Search-Files {
     param ([string]$searchTerm)
     
@@ -640,23 +640,11 @@ function Search-Files {
             Where-Object { $_.Name -like "*$searchTerm*" }
         
         foreach ($item in $searchResults) {
-            $listViewItem = New-Object System.Windows.Forms.ListViewItem($item.Name)
-            
-            if ($item.PSIsContainer) {
-                $type = "Folder"
-                $size = ""
-            } else {
-                $type = if ($item.Extension) { $item.Extension.TrimStart(".").ToUpper() } else { "File" }
-                $size = Format-FileSize $item.Length
-            }
-            
-            $listViewItem.SubItems.Add($type)
-            $listViewItem.SubItems.Add($size)
-            $listViewItem.SubItems.Add($item.LastWriteTime.ToString("g"))
-            $listViewItem.Tag = $item.FullName
-            
-            $listView.Items.Add($listViewItem)
+            # ... existing code ...
         }
+        
+        # Add this line to update status bar after search
+        Update-StatusBar -path $global:currentPath
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -865,6 +853,69 @@ Modified: $($archive.LastWriteTime)
     }
 }
 
+# Create StatusStrip
+$statusStrip = New-Object System.Windows.Forms.StatusStrip
+$form.Controls.Add($statusStrip)
+$statusStrip.Dock = [System.Windows.Forms.DockStyle]::Bottom
+
+# Create status bar labels
+$statusItemCount = New-Object System.Windows.Forms.ToolStripStatusLabel
+$statusItemCount.Text = "0 items"
+$statusItemCount.Spring = $true
+
+$statusTotalSize = New-Object System.Windows.Forms.ToolStripStatusLabel
+$statusTotalSize.Text = "Total size: 0 bytes"
+
+$statusSelectedItems = New-Object System.Windows.Forms.ToolStripStatusLabel
+$statusSelectedItems.Text = "0 selected"
+
+# Add labels to StatusStrip
+$statusStrip.Items.AddRange(@($statusItemCount, $statusTotalSize, $statusSelectedItems))
+
+# Function to update status bar
+function Update-StatusBar {
+    param (
+        [string]$path
+    )
+
+    try {
+        # Get all items in the current directory
+        $items = Get-ChildItem -Path $path -ErrorAction Stop
+
+        # Calculate total number of items
+        $totalItems = $items.Count
+        $totalFiles = ($items | Where-Object { -not $_.PSIsContainer }).Count
+        $totalFolders = ($items | Where-Object { $_.PSIsContainer }).Count
+
+        # Calculate total size of files
+        $totalSize = ($items | Where-Object { -not $_.PSIsContainer } | Measure-Object -Property Length -Sum).Sum
+
+        # Update status labels
+        $statusItemCount.Text = "$totalItems items ($totalFiles files, $totalFolders folders)"
+        $statusTotalSize.Text = "Total size: $(Format-FileSize $totalSize)"
+    }
+    catch {
+        $statusItemCount.Text = "0 items"
+        $statusTotalSize.Text = "Total size: 0 bytes"
+    }
+
+    # Update selected items
+    $selectedCount = $listView.SelectedItems.Count
+    if ($selectedCount -gt 0) {
+        $selectedSize = ($listView.SelectedItems | ForEach-Object { 
+            $path = $_.Tag
+            if (Test-Path -Path $path -PathType Leaf) {
+                (Get-Item $path).Length 
+            } else { 0 }
+        } | Measure-Object -Sum).Sum
+
+        $statusSelectedItems.Text = "$selectedCount selected ($(Format-FileSize $selectedSize))"
+    }
+    else {
+        $statusSelectedItems.Text = "0 selected"
+    }
+}
+
 # Function to populate the ListView
 function Populate-ListView {
     param ([string]$path)
@@ -898,6 +949,8 @@ function Populate-ListView {
         }
         
         Update-NavigationButtons
+        Update-StatusBar -path $path
+
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -1195,7 +1248,9 @@ Modified: $($archive.LastWriteTime)
 # Event handler for ListView selection changed
 $listView.add_SelectedIndexChanged({
     Update-NavigationButtons
+    Update-StatusBar -path $global:currentPath
 })
+
 
 # Event handler for ListView click
 $listView.add_MouseClick({
