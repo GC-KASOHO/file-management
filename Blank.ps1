@@ -178,6 +178,300 @@ $refresh.Add_Click({
 
 $viewMenu.DropDownItems.Add($refresh)
 
+# Create Sort Menu Button
+$sortMenu = New-Object System.Windows.Forms.ToolStripDropDownButton
+$sortMenu.Text = "Sort"
+$sortMenu.DisplayStyle = [System.Windows.Forms.ToolStripItemDisplayStyle]::Text
+
+# Create Sort Options Menu Items
+$sortByName = New-Object System.Windows.Forms.ToolStripMenuItem
+$sortByName.Text = "Name"
+$sortByName.Checked = $true
+$global:currentSortColumn = "Name"
+$global:sortAscending = $true
+
+$sortByType = New-Object System.Windows.Forms.ToolStripMenuItem
+$sortByType.Text = "Type"
+
+$sortByDateModified = New-Object System.Windows.Forms.ToolStripMenuItem
+$sortByDateModified.Text = "Date modified"
+
+$sortBySize = New-Object System.Windows.Forms.ToolStripMenuItem
+$sortBySize.Text = "Size"
+
+# Create Sort Direction Options
+$separator = New-Object System.Windows.Forms.ToolStripSeparator
+$ascending = New-Object System.Windows.Forms.ToolStripMenuItem
+$ascending.Text = "Ascending"
+$ascending.Checked = $true
+
+$descending = New-Object System.Windows.Forms.ToolStripMenuItem
+$descending.Text = "Descending"
+
+# Add items to Sort menu
+$sortMenu.DropDownItems.AddRange(@(
+    $sortByName,
+    $sortByType,
+    $sortByDateModified,
+    $sortBySize,
+    $separator,
+    $ascending,
+    $descending
+))
+
+# Add Sort menu to MenuStrip (after View menu)
+$menuStrip.Items.Add($sortMenu)
+
+# Function to update sort checks
+function Update-SortChecks {
+    param($selectedItem)
+    
+    $sortByName.Checked = $false
+    $sortByType.Checked = $false
+    $sortByDateModified.Checked = $false
+    $sortBySize.Checked = $false
+    
+    $selectedItem.Checked = $true
+    $global:currentSortColumn = $selectedItem.Text
+}
+
+# Function to update direction checks
+function Update-DirectionChecks {
+    param($isAscending)
+    
+    $ascending.Checked = $isAscending
+    $descending.Checked = -not $isAscending
+    $global:sortAscending = $isAscending
+}
+
+# Function to sort ListView items
+function Sort-ListView {
+    param (
+        [string]$column,
+        [bool]$ascending
+    )
+    
+    $items = @($listView.Items)
+    
+    switch ($column) {
+        "Name" {
+            $sorted = if ($ascending) {
+                $items | Sort-Object { $_.Text }
+            } else {
+                $items | Sort-Object { $_.Text } -Descending
+            }
+        }
+        "Type" {
+            $sorted = if ($ascending) {
+                $items | Sort-Object { $_.SubItems[1].Text }
+            } else {
+                $items | Sort-Object { $_.SubItems[1].Text } -Descending
+            }
+        }
+        "Date modified" {
+            $sorted = if ($ascending) {
+                $items | Sort-Object { [DateTime]::Parse($_.SubItems[3].Text) }
+            } else {
+                $items | Sort-Object { [DateTime]::Parse($_.SubItems[3].Text) } -Descending
+            }
+        }
+        "Size" {
+            $sorted = if ($ascending) {
+                $items | Sort-Object {
+                    if ($_.SubItems[2].Text -eq "") { 0 }
+                    else {
+                        $size = $_.SubItems[2].Text
+                        switch -Regex ($size) {
+                            "(\d+\.?\d*)\s*B" { [double]$matches[1] }
+                            "(\d+\.?\d*)\s*KB" { [double]$matches[1] * 1KB }
+                            "(\d+\.?\d*)\s*MB" { [double]$matches[1] * 1MB }
+                            "(\d+\.?\d*)\s*GB" { [double]$matches[1] * 1GB }
+                            "(\d+\.?\d*)\s*TB" { [double]$matches[1] * 1TB }
+                            default { 0 }
+                        }
+                    }
+                }
+            } else {
+                $items | Sort-Object {
+                    if ($_.SubItems[2].Text -eq "") { 0 }
+                    else {
+                        $size = $_.SubItems[2].Text
+                        switch -Regex ($size) {
+                            "(\d+\.?\d*)\s*B" { [double]$matches[1] }
+                            "(\d+\.?\d*)\s*KB" { [double]$matches[1] * 1KB }
+                            "(\d+\.?\d*)\s*MB" { [double]$matches[1] * 1MB }
+                            "(\d+\.?\d*)\s*GB" { [double]$matches[1] * 1GB }
+                            "(\d+\.?\d*)\s*TB" { [double]$matches[1] * 1TB }
+                            default { 0 }
+                        }
+                    }
+                } -Descending
+            }
+        }
+    }
+    
+    $listView.BeginUpdate()
+    $listView.Items.Clear()
+    $listView.Items.AddRange($sorted)
+    $listView.EndUpdate()
+}
+
+# Event handlers for sort options
+$sortByName.Add_Click({
+    Update-SortChecks $sortByName
+    Sort-ListView "Name" $global:sortAscending
+})
+
+$sortByType.Add_Click({
+    Update-SortChecks $sortByType
+    Sort-ListView "Type" $global:sortAscending
+})
+
+$sortByDateModified.Add_Click({
+    Update-SortChecks $sortByDateModified
+    Sort-ListView "Date modified" $global:sortAscending
+})
+
+$sortBySize.Add_Click({
+    Update-SortChecks $sortBySize
+    Sort-ListView "Size" $global:sortAscending
+})
+
+# Event handlers for sort direction
+$ascending.Add_Click({
+    Update-DirectionChecks $true
+    Sort-ListView $global:currentSortColumn $true
+})
+
+$descending.Add_Click({
+    Update-DirectionChecks $false
+    Sort-ListView $global:currentSortColumn $false
+})
+
+function Show-FileExplorer {
+    param (
+        [Parameter(Position=0)]
+        [string]$Path = (Get-Location),
+        
+        [Parameter()]
+        [ValidateSet("ExtraLargeIcons", "LargeIcons", "MediumIcons", "SmallIcons", "List", "Details")]
+        [string]$View = "Details",
+        
+        [Parameter()]
+        [switch]$ShowHidden
+    )
+    
+    # Ensure the path exists
+    if (-not (Test-Path $Path)) {
+        Write-Error "Path '$Path' does not exist."
+        return
+    }
+    
+    # Format parameters for Get-ChildItem
+    $params = @{
+        Path = $Path
+        Force = $ShowHidden
+    }
+    
+    # Get items
+    $items = Get-ChildItem @params | Select-Object Mode, LastWriteTime, Length, Name, Extension
+    
+    # Custom formatting based on view type
+    switch ($View) {
+        "ExtraLargeIcons" {
+            Write-Host "╔════ Extra Large Icons View ════╗"
+            $items | ForEach-Object {
+                Write-Host ("║ {0,-50} ║" -f $_.Name)
+            }
+            Write-Host "╚══════════════════════════════════╝"
+        }
+        "LargeIcons" {
+            Write-Host "╔════ Large Icons View ════╗"
+            $items | ForEach-Object {
+                Write-Host ("║ {0,-40} ║" -f $_.Name)
+            }
+            Write-Host "╚════════════════════════════╝"
+        }
+        "MediumIcons" {
+            Write-Host "╔════ Medium Icons View ════╗"
+            $items | Format-Wide -Column 2 -Property Name
+            Write-Host "╚════════════════════════════╝"
+        }
+        "SmallIcons" {
+            Write-Host "╔════ Small Icons View ════╗"
+            $items | Format-Wide -Column 3 -Property Name
+            Write-Host "╚═══════════════════════════╝"
+        }
+        "List" {
+            $items | Format-Wide -Column 1 -Property Name
+        }
+        "Details" {
+            $items | Format-Table -Property @(
+                @{Label="Type"; Expression={$_.Mode}},
+                @{Label="Last Modified"; Expression={$_.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")}},
+                @{Label="Size"; Expression={
+                    if ($_.Length -ge 1GB) { "{0:N2} GB" -f ($_.Length / 1GB) }
+                    elseif ($_.Length -ge 1MB) { "{0:N2} MB" -f ($_.Length / 1MB) }
+                    elseif ($_.Length -ge 1KB) { "{0:N2} KB" -f ($_.Length / 1KB) }
+                    else { "{0} B" -f $_.Length }
+                }},
+                @{Label="Name"; Expression={$_.Name}}
+            ) -AutoSize
+        }
+    }
+    
+    # Display current path and item count
+    Write-Host "`nCurrent Path: $Path"
+    Write-Host "Total Items: $($items.Count)"
+}
+
+# Add tab completion for the View parameter
+Register-ArgumentCompleter -CommandName Show-FileExplorer -ParameterName View -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+    @('ExtraLargeIcons', 'LargeIcons', 'MediumIcons', 'SmallIcons', 'List', 'Details') | Where-Object {
+        $_ -like "$wordToComplete*"
+    }
+}
+
+# Create View tab/menu
+$viewMenu = New-Object System.Windows.Forms.ToolStripMenuItem("View")
+# Add view options as dropdown items
+$viewOptions = @(
+    "Extra large icons",
+    "Large icons",
+    "Medium-sized icons",
+    "Small icons",
+    "List",
+    "Details"
+)
+
+foreach ($option in $viewOptions) {
+    $viewMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $viewMenuItem.Text = $option
+    $viewMenuItem.Add_Click({
+        $selected = $this.Text
+        # Uncheck all items
+        $viewMenu.DropDownItems | ForEach-Object { $_.Checked = $false }
+        # Check the selected item
+        $this.Checked = $true
+        
+        # Update the view based on selection
+        $listView.View = switch ($selected) {
+            "Extra large icons" { [System.Windows.Forms.View]::LargeIcon }
+            "Large icons" { [System.Windows.Forms.View]::LargeIcon }
+            "Medium-sized icons" { [System.Windows.Forms.View]::LargeIcon }
+            "Small icons" { [System.Windows.Forms.View]::SmallIcon }
+            "List" { [System.Windows.Forms.View]::List }
+            "Details" { [System.Windows.Forms.View]::Details }
+        }
+    })
+    $viewMenu.DropDownItems.Add($viewMenuItem)
+}
+
+# Insert View menu after Sort in the MenuStrip
+# Assuming $menuStrip is your MenuStrip control and Sort is the second item
+$menuStrip.Items.Insert(2, $viewMenu)
+
 # Create Navigation Buttons
 $btnBack = New-Object System.Windows.Forms.ToolStripMenuItem
 $btnBack.Text = "←"
@@ -235,7 +529,7 @@ $btnDown.Add_Click({
 })
 
 # Add all items to MenuStrip in order
-$menuStrip.Items.AddRange(@($fileMenu, $editMenu, $viewMenu, $btnBack, $btnForward, $btnUp, $btnDown))
+$menuStrip.Items.AddRange(@($btnBack, $btnForward, $btnUp, $fileMenu, $sortMenu, $viewMenu, $editMenu, $viewMen ))
 
 # Create address bar in MenuStrip
 $addressBar = New-Object System.Windows.Forms.ToolStripTextBox
@@ -403,8 +697,6 @@ function Update-NavigationButtons {
     $btnBack.Enabled = $global:currentIndex -gt 0
     $btnForward.Enabled = $global:currentIndex -lt ($global:navigationHistory.Count - 1)
     $btnUp.Enabled = (Split-Path $global:currentPath -Parent) -ne $null
-    $btnDown.Enabled = ($listView.SelectedItems.Count -gt 0) -and 
-                      (Test-Path -Path $listView.SelectedItems[0].Tag -PathType Container)
 }
 
 # Function to handle navigation
