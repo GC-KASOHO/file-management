@@ -1,4 +1,7 @@
-# Function to get supported formats based on file extension
+# Load required assemblies
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
 function Get-SupportedFormats {
     param (
         [string]$extension
@@ -60,25 +63,47 @@ function Get-SupportedFormats {
     }
 }
 
-function Show-ConversionDialog {
+function Show-FormatSelectionDialog {
     param (
-        [string]$sourceFile,
-        [array]$formats
+        [Parameter(Mandatory=$true)]
+        [string]$filePath
     )
     
+    # Get the file extension and supported formats
+    $extension = [System.IO.Path]::GetExtension($filePath)
+    $formats = Get-SupportedFormats -extension $extension
+    
+    # Check if file type is supported
+    if ($formats.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "This file type is not supported for conversion.",
+            "Unsupported File Type",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+        return $null
+    }
+    
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Convert File"
+    $form.Text = "Select Conversion Format"
     $form.Size = New-Object System.Drawing.Size(400, 200)
     $form.StartPosition = "CenterScreen"
     
-    $label = New-Object System.Windows.Forms.Label
-    $label.Location = New-Object System.Drawing.Point(10, 20)
-    $label.Size = New-Object System.Drawing.Size(360, 20)
-    $label.Text = "Select output format:"
-    $form.Controls.Add($label)
+    # Add file name label
+    $fileLabel = New-Object System.Windows.Forms.Label
+    $fileLabel.Location = New-Object System.Drawing.Point(10, 20)
+    $fileLabel.Size = New-Object System.Drawing.Size(360, 20)
+    $fileLabel.Text = "File: $([System.IO.Path]::GetFileName($filePath))"
+    $form.Controls.Add($fileLabel)
+    
+    $formatLabel = New-Object System.Windows.Forms.Label
+    $formatLabel.Location = New-Object System.Drawing.Point(10, 50)
+    $formatLabel.Size = New-Object System.Drawing.Size(360, 20)
+    $formatLabel.Text = "Select output format:"
+    $form.Controls.Add($formatLabel)
     
     $comboBox = New-Object System.Windows.Forms.ComboBox
-    $comboBox.Location = New-Object System.Drawing.Point(10, 50)
+    $comboBox.Location = New-Object System.Drawing.Point(10, 80)
     $comboBox.Size = New-Object System.Drawing.Size(360, 20)
     $comboBox.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
     
@@ -98,7 +123,7 @@ function Show-ConversionDialog {
     $form.Controls.Add($comboBox)
     
     $okButton = New-Object System.Windows.Forms.Button
-    $okButton.Location = New-Object System.Drawing.Point(100, 100)
+    $okButton.Location = New-Object System.Drawing.Point(100, 120)
     $okButton.Size = New-Object System.Drawing.Size(75, 23)
     $okButton.Text = "Convert"
     $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
@@ -106,7 +131,7 @@ function Show-ConversionDialog {
     $form.Controls.Add($okButton)
     
     $cancelButton = New-Object System.Windows.Forms.Button
-    $cancelButton.Location = New-Object System.Drawing.Point(200, 100)
+    $cancelButton.Location = New-Object System.Drawing.Point(200, 120)
     $cancelButton.Size = New-Object System.Drawing.Size(75, 23)
     $cancelButton.Text = "Cancel"
     $cancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel

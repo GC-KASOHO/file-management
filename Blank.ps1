@@ -2,6 +2,9 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# Import the script
+. .\FileConverter.ps1
+
 # Create a form for the File Explorer
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "PowerShell File Explorer"
