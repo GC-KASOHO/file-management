@@ -7,98 +7,113 @@ $form = New-Object System.Windows.Forms.Form
 $form.Text = "PowerShell File Explorer"
 $form.Size = New-Object System.Drawing.Size(900, 600)
 $form.StartPosition = "CenterScreen"
-
-# Set the background color (optional)
 $form.BackColor = [System.Drawing.Color]::LightGray
 
-# Create a TreeView to display directories (left side)
+# Create ImageList for TreeView icons
+$imageList = New-Object System.Windows.Forms.ImageList
+$imageList.ImageSize = New-Object System.Drawing.Size(16, 16)
+
+# Add icons
+$folderIcon = [System.Drawing.SystemIcons]::FolderLarge.ToBitmap()
+$driveIcon = [System.Drawing.SystemIcons]::Application.ToBitmap()
+$homeIcon = [System.Drawing.SystemIcons]::Information.ToBitmap()
+
+$imageList.Images.Add("drive", $driveIcon)
+$imageList.Images.Add("folder", $folderIcon)
+$imageList.Images.Add("home", $homeIcon)
+
+# Create TreeView
 $treeView = New-Object System.Windows.Forms.TreeView
 $treeView.Size = New-Object System.Drawing.Size(250, 500)
 $treeView.Location = New-Object System.Drawing.Point(10, 50)
-$treeView.Scrollable = $true
+$treeView.ImageList = $imageList
+$treeView.ShowLines = $true
 $form.Controls.Add($treeView)
 
-# Create a ListBox to display files (right side)
-$listBox = New-Object System.Windows.Forms.ListBox
-$listBox.Size = New-Object System.Drawing.Size(600, 500)
-$listBox.Location = New-Object System.Drawing.Point(270, 50)
-$form.Controls.Add($listBox)
+# Create ListView
+$listView = New-Object System.Windows.Forms.ListView
+$listView.Size = New-Object System.Drawing.Size(600, 500)
+$listView.Location = New-Object System.Drawing.Point(270, 50)
+$listView.View = [System.Windows.Forms.View]::Details
+$listView.FullRowSelect = $true
+$listView.GridLines = $true
+$listView.Columns.Add("Name", 250)
+$listView.Columns.Add("Size", 100)
+$listView.Columns.Add("Type", 100)
+$listView.Columns.Add("Last Modified", 150)
+$form.Controls.Add($listView)
 
-# Create a TextBox for the search functionality (right side)
-$searchBox = New-Object System.Windows.Forms.TextBox
-$searchBox.Size = New-Object System.Drawing.Size(200, 20)
-$searchBox.Location = New-Object System.Drawing.Point(604, 8)  # Place search box on the left of toolbar
-$form.Controls.Add($searchBox)
-
-# Create a Button for initiating the search (right side)
-$searchButton = New-Object System.Windows.Forms.Button
-$searchButton.Text = "Search"
-$searchButton.Size = New-Object System.Drawing.Size(70, 20)
-$searchButton.Location = New-Object System.Drawing.Point(806, 9)  # Place search button next to the search box
-$form.Controls.Add($searchButton)
-
-# Create a toolbar panel (smaller height)
-$toolbar = New-Object System.Windows.Forms.Panel
-$toolbar.Size = New-Object System.Drawing.Size(900, 30)  # Reduced height of the toolbar
-$toolbar.Location = New-Object System.Drawing.Point(0, 0)
-$toolbar.BackColor = [System.Drawing.Color]::DarkGray
-$form.Controls.Add($toolbar)
-
-# Add buttons to the toolbar
-$createFolderButton = New-Object System.Windows.Forms.Button
-$createFolderButton.Text = "New Folder"
-$createFolderButton.Size = New-Object System.Drawing.Size(100, 25)  # Adjusted button size
-$createFolderButton.Location = New-Object System.Drawing.Point(10, 3)
-$toolbar.Controls.Add($createFolderButton)
-
-$copyButton = New-Object System.Windows.Forms.Button
-$copyButton.Text = "Copy"
-$copyButton.Size = New-Object System.Drawing.Size(100, 25)  # Adjusted button size
-$copyButton.Location = New-Object System.Drawing.Point(120, 3)
-$toolbar.Controls.Add($copyButton)
-
-$pasteButton = New-Object System.Windows.Forms.Button
-$pasteButton.Text = "Paste"
-$pasteButton.Size = New-Object System.Drawing.Size(100, 25)  # Adjusted button size
-$pasteButton.Location = New-Object System.Drawing.Point(230, 3)
-$toolbar.Controls.Add($pasteButton)
-
-$deleteButton = New-Object System.Windows.Forms.Button
-$deleteButton.Text = "Delete"
-$deleteButton.Size = New-Object System.Drawing.Size(100, 25)  # Adjusted button size
-$deleteButton.Location = New-Object System.Drawing.Point(340, 3)
-$toolbar.Controls.Add($deleteButton)
-
-# Function to search for files and folders
-function Search-FilesAndFolders {
-    param (
-        [string]$query,
-        [string]$path
+# Function to get special folders
+function Get-SpecialFolders {
+    return @(
+        @{ Name = "Home"; Path = $env:USERPROFILE; Icon = 2 },
+        @{ Name = "Desktop"; Path = [System.Environment]::GetFolderPath("Desktop"); Icon = 1 },
+        @{ Name = "Documents"; Path = [System.Environment]::GetFolderPath("MyDocuments"); Icon = 1 },
+        @{ Name = "Downloads"; Path = (Join-Path $env:USERPROFILE "Downloads"); Icon = 1 },
+        @{ Name = "Pictures"; Path = [System.Environment]::GetFolderPath("MyPictures"); Icon = 1 },
+        @{ Name = "Videos"; Path = [System.Environment]::GetFolderPath("MyVideos"); Icon = 1 }
     )
+}
 
-    $listBox.Items.Clear()
-    try {
-        Get-ChildItem -Path $path -Recurse -ErrorAction Stop | Where-Object {
-            $_.Name -like "*$query*"
-        } | ForEach-Object {
-            $listBox.Items.Add($_.FullName)
-        }
-    } catch {
-        [System.Windows.Forms.MessageBox]::Show("Error searching: $_", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+# Populate TreeView with special folders and drives
+function Populate-TreeView {
+    $treeView.Nodes.Clear()
+
+    # Add special folders
+    $specialFolders = Get-SpecialFolders
+    foreach ($folder in $specialFolders) {
+        $folderNode = New-Object System.Windows.Forms.TreeNode
+        $folderNode.Text = $folder.Name
+        $folderNode.Tag = $folder.Path
+        $folderNode.ImageIndex = $folder.Icon
+        $folderNode.SelectedImageIndex = $folder.Icon
+        $treeView.Nodes.Add($folderNode)
+    }
+
+    # Add drives
+    Get-PSDrive -PSProvider FileSystem | ForEach-Object {
+        $driveNode = New-Object System.Windows.Forms.TreeNode
+        $driveNode.Text = $_.Name + ":\"
+        $driveNode.Tag = $_.Root
+        $driveNode.ImageIndex = 0
+        $driveNode.SelectedImageIndex = 0
+        $treeView.Nodes.Add($driveNode)
     }
 }
 
-# Handle the search button click
-$searchButton.Add_Click({
-    $query = $searchBox.Text
-    $currentPath = if ($treeView.SelectedNode) { $treeView.SelectedNode.Tag } else { "C:\" }
+# Function to show file details in ListView
+function Show-FileDetails {
+    param($path)
+    $listView.Items.Clear()
+    try {
+        Get-ChildItem -Path $path | ForEach-Object {
+            $item = New-Object System.Windows.Forms.ListViewItem($_.Name)
+            if ($_.PSIsContainer) {
+                $item.SubItems.Add("<DIR>")
+                $item.SubItems.Add("Folder")
+            } else {
+                $item.SubItems.Add("{0:N2} KB" -f ($_.Length / 1KB))
+                $item.SubItems.Add($_.Extension)
+            }
+            $item.SubItems.Add($_.LastWriteTime.ToString())
+            $item.Tag = $_.FullName
+            $listView.Items.Add($item)
+        }
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Unable to access path: $path", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
+}
 
-    if (-not [string]::IsNullOrWhiteSpace($query)) {
-        Search-FilesAndFolders -query $query -path $currentPath
-    } else {
-        [System.Windows.Forms.MessageBox]::Show("Please enter a search query.", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+# Event handler for TreeView selection
+$treeView.Add_AfterSelect({
+    param($sender, $e)
+    if ($e.Node.Tag) {
+        Show-FileDetails $e.Node.Tag
     }
 })
+
+# Initialize TreeView
+Populate-TreeView
 
 # Show the form
 [void]$form.ShowDialog()
