@@ -24,10 +24,12 @@ $listBox.Size = New-Object System.Drawing.Size(600, 500)
 $listBox.Location = New-Object System.Drawing.Point(270, 50)
 $form.Controls.Add($listBox)
 
-# Create a TextBox for the search functionality
+# Create a TextBox for the search functionality with black border
 $searchBox = New-Object System.Windows.Forms.TextBox
 $searchBox.Size = New-Object System.Drawing.Size(200, 20)
 $searchBox.Location = New-Object System.Drawing.Point(600,12)
+$searchBox.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$searchBox.BackColor = [System.Drawing.Color]::White
 $form.Controls.Add($searchBox)
 
 # Create a Button for initiating the search
