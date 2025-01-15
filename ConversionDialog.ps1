@@ -1,6 +1,109 @@
 # Load required assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName Microsoft.Office.Interop.Word
+Add-Type -AssemblyName Microsoft.Office.Interop.Excel
+Add-Type -AssemblyName Microsoft.Office.Interop.PowerPoint
+
+function Convert-File {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$sourcePath,
+        [Parameter(Mandatory=$true)]
+        [string]$targetFormat
+    )
+    
+    try {
+        $sourceExt = [System.IO.Path]::GetExtension($sourcePath).ToLower()
+        $targetPath = [System.IO.Path]::ChangeExtension($sourcePath, $targetFormat)
+        
+        switch -Regex ($sourceExt) {
+            # Word document conversions
+            '\.(doc|docx)$' {
+                $word = New-Object -ComObject Word.Application
+                $word.Visible = $false
+                $doc = $word.Documents.Open($sourcePath)
+                
+                switch ($targetFormat) {
+                    '.pdf' { $doc.SaveAs([ref]$targetPath, [ref]17) } # wdFormatPDF = 17
+                    '.txt' { $doc.SaveAs([ref]$targetPath, [ref]2) }  # wdFormatText = 2
+                    '.rtf' { $doc.SaveAs([ref]$targetPath, [ref]6) }  # wdFormatRTF = 6
+                    '.html' { $doc.SaveAs([ref]$targetPath, [ref]8) } # wdFormatHTML = 8
+                }
+                
+                $doc.Close()
+                $word.Quit()
+                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word)
+            }
+            
+            # Excel workbook conversions
+            '\.(xls|xlsx)$' {
+                $excel = New-Object -ComObject Excel.Application
+                $excel.Visible = $false
+                $workbook = $excel.Workbooks.Open($sourcePath)
+                
+                switch ($targetFormat) {
+                    '.pdf' { $workbook.ExportAsFixedFormat([Microsoft.Office.Interop.Excel.XlFixedFormatType]::xlTypePDF, $targetPath) }
+                    '.csv' { $workbook.SaveAs($targetPath, [Microsoft.Office.Interop.Excel.XlFileFormat]::xlCSV) }
+                    '.txt' { $workbook.SaveAs($targetPath, [Microsoft.Office.Interop.Excel.XlFileFormat]::xlText) }
+                }
+                
+                $workbook.Close($false)
+                $excel.Quit()
+                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel)
+            }
+            
+            # PowerPoint presentation conversions
+            '\.(ppt|pptx)$' {
+                $ppt = New-Object -ComObject PowerPoint.Application
+                $presentation = $ppt.Presentations.Open($sourcePath)
+                
+                switch ($targetFormat) {
+                    '.pdf' { $presentation.SaveAs($targetPath, [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPDF) }
+                    '.jpg' { $presentation.SaveAs($targetPath, [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsJPG) }
+                    '.png' { $presentation.SaveAs($targetPath, [Microsoft.Office.Interop.PowerPoint.PpSaveAsFileType]::ppSaveAsPNG) }
+                }
+                
+                $presentation.Close()
+                $ppt.Quit()
+                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($ppt)
+            }
+            
+            # Image conversions
+            '\.(jpg|jpeg|png|gif|bmp)$' {
+                $image = [System.Drawing.Image]::FromFile($sourcePath)
+                switch ($targetFormat) {
+                    '.jpg' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Jpeg) }
+                    '.png' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Png) }
+                    '.bmp' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Bmp) }
+                    '.gif' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Gif) }
+                }
+                $image.Dispose()
+            }
+            
+            # PDF conversions (requires Adobe Acrobat or third-party tools)
+            '\.pdf$' {
+                throw "PDF conversion requires additional software. Please install Adobe Acrobat or a compatible PDF converter."
+            }
+            
+            default {
+                throw "Unsupported file format: $sourceExt"
+            }
+        }
+        
+        Write-Host "File converted successfully: $targetPath"
+        return $true
+    }
+    catch {
+        Write-Error "Conversion failed: $_"
+        return $false
+    }
+    finally {
+        # Clean up any remaining COM objects
+        [System.GC]::Collect()
+        [System.GC]::WaitForPendingFinalizers()
+    }
+}
 
 function Get-SupportedFormats {
     param (
@@ -146,3 +249,14 @@ function Show-FormatSelectionDialog {
     }
     return $null
 }
+
+# Example usage:
+# $selectedFormat = Show-FormatSelectionDialog -filePath "C:\path\to\your\file.docx"
+# if ($selectedFormat) {
+#     $result = Convert-File -sourcePath $filePath -targetFormat $selectedFormat.Extension
+#     if ($result) {
+#         Write-Host "Conversion completed successfully"
+#     } else {
+#         Write-Host "Conversion failed"
+#     }
+# }

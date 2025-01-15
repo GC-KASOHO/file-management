@@ -1335,7 +1335,7 @@ $menuItemConvert.Add_Click({
             return
         }
         
-        $selectedFormat = Show-ConversionDialog -sourceFile $sourcePath -formats $formats
+        $selectedFormat = Show-FormatSelectionDialog -filePath $sourcePath
         if ($selectedFormat) {
             $result = Convert-File -sourcePath $sourcePath -targetFormat $selectedFormat.Extension
             if ($result) {
