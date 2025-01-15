@@ -557,26 +557,78 @@ $addressBar.Add_KeyPress({
     }
 })
 
-# Create search box in MenuStrip
+# Create a custom container for search controls
+$searchContainer = New-Object System.Windows.Forms.ToolStripControlHost(
+    (New-Object System.Windows.Forms.Panel)
+)
+$searchContainer.Control.Size = New-Object System.Drawing.Size(290, 27)
+$searchContainer.Control.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$searchContainer.Control.BackColor = [System.Drawing.Color]::White
+$searchContainer.Padding = New-Object System.Windows.Forms.Padding(0)
+$searchContainer.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
+
+# Create search box in MenuStrip with modified style
 $searchBox = New-Object System.Windows.Forms.ToolStripTextBox
 $searchBox.Size = New-Object System.Drawing.Size(200, 25)
 $searchBox.Name = "SearchBox"
 $searchBox.PlaceholderText = "Search..."
+$searchBox.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$searchBox.Margin = New-Object System.Windows.Forms.Padding(5, 0, 0, 0)
+$searchBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
-# Create search button in MenuStrip
+# Create search button in MenuStrip with modified style
 $searchButton = New-Object System.Windows.Forms.ToolStripButton
 $searchButton.Text = "Search"
 $searchButton.DisplayStyle = [System.Windows.Forms.ToolStripItemDisplayStyle]::Text
+$searchButton.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
+$searchButton.Margin = New-Object System.Windows.Forms.Padding(0, 0, 5, 0)
 
 # Add controls to MenuStrip
 $menuStrip.Items.Add($addressBar)
+
 # Add a small spring after address bar
 $springAfterAddress = New-Object System.Windows.Forms.ToolStripStatusLabel
 $springAfterAddress.Spring = $true
 $springAfterAddress.Width = 20
 $menuStrip.Items.Add($springAfterAddress)
+
+# Create a panel to hold search controls
+$searchPanel = New-Object System.Windows.Forms.Panel
+$searchPanel.Size = New-Object System.Drawing.Size(290, 27)
+$searchPanel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$searchPanel.BackColor = [System.Drawing.Color]::White
+
+# Add the panel to the MenuStrip using ToolStripControlHost
+$searchPanelHost = New-Object System.Windows.Forms.ToolStripControlHost($searchPanel)
+$searchPanelHost.Padding = New-Object System.Windows.Forms.Padding(0)
+$searchPanelHost.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
+$menuStrip.Items.Add($searchPanelHost)
+
+# Add search box and button to MenuStrip
 $menuStrip.Items.Add($searchBox)
 $menuStrip.Items.Add($searchButton)
+
+# Search button click event
+$searchButton.Add_Click({
+    Search-Files $searchBox.Text
+})
+
+# Search box key press event
+$searchBox.Add_KeyPress({
+    param($sender, $e)
+    if ($e.KeyChar -eq [System.Windows.Forms.Keys]::Enter) {
+        $e.Handled = $true
+        Search-Files $searchBox.Text
+    }
+})
+
+# Optional: Add hover effect to search button
+$searchButton.Add_MouseEnter({
+    $this.BackColor = [System.Drawing.Color]::FromArgb(230, 230, 230)
+})
+$searchButton.Add_MouseLeave({
+    $this.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
+})
 
 # Create Quick Access panel
 $quickAccessPanel = New-Object System.Windows.Forms.FlowLayoutPanel
@@ -616,15 +668,14 @@ $form.Controls.Add($listView)
 $columns = @(
     @{Name="Name"; Width=250},
     @{Name="Type"; Width=100},
-    @{Name="Size"; Width=100},
+    @{Name="Size"; Width=100}, 
     @{Name="Modified"; Width=150}
 )
 
 foreach ($column in $columns) {
     $listView.Columns.Add($column.Name, $column.Width)
 }
-
-# Update search function
+#Search-function
 function Search-Files {
     param ([string]$searchTerm)
     
@@ -640,11 +691,32 @@ function Search-Files {
             Where-Object { $_.Name -like "*$searchTerm*" }
         
         foreach ($item in $searchResults) {
-            # ... existing code ...
+            $listViewItem = New-Object System.Windows.Forms.ListViewItem
+            $listViewItem.Text = $item.Name
+            
+            # Add subitems
+            $listViewItem.SubItems.Add($item.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"))
+            
+            if ($item.PSIsContainer) {
+                $listViewItem.SubItems.Add("Folder")
+                $listViewItem.SubItems.Add("")
+                $listViewItem.ImageIndex = 0  # Assuming 0 is your folder icon index
+            } else {
+                $listViewItem.SubItems.Add("File")
+                $listViewItem.SubItems.Add([string]::Format("{0:N2} KB", $item.Length / 1KB))
+                $listViewItem.ImageIndex = 1  # Assuming 1 is your file icon index
+            }
+            
+            # Store the full path in the Tag property
+            $listViewItem.Tag = $item.FullName
+            
+            # Add the item to the ListView
+            $listView.Items.Add($listViewItem)
         }
         
-        # Add this line to update status bar after search
-        Update-StatusBar -path $global:currentPath
+        # Update status bar with search results count
+        $statusMessage = "Found $($searchResults.Count) items matching '$searchTerm'"
+        Update-StatusBar -path $statusMessage
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -655,20 +727,6 @@ function Search-Files {
         )
     }
 }
-
-#search button click event
-$searchButton.Add_Click({
-    Search-Files $searchBox.Text
-})
-
-#search box key
-$searchBox.Add_KeyPress({
-    param($sender, $e)
-    if ($e.KeyChar -eq [System.Windows.Forms.Keys]::Enter) {
-        $e.Handled = $true
-        Search-Files $searchBox.Text
-    }
-})
 
 # Function to format file size
 function Format-FileSize {
