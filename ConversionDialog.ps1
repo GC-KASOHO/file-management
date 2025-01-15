@@ -5,6 +5,14 @@ Add-Type -AssemblyName Microsoft.Office.Interop.Word
 Add-Type -AssemblyName Microsoft.Office.Interop.Excel
 Add-Type -AssemblyName Microsoft.Office.Interop.PowerPoint
 
+# Load iTextSharp for PDF operations - you'll need to install this first
+$iTextSharpPath = Join-Path $PSScriptRoot "itextsharp.dll"
+if (Test-Path $iTextSharpPath) {
+    Add-Type -Path $iTextSharpPath
+} else {
+    Write-Warning "iTextSharp.dll not found. Some PDF conversions may not be available."
+}
+
 function Convert-File {
     param (
         [Parameter(Mandatory=$true)]
@@ -72,18 +80,145 @@ function Convert-File {
             # Image conversions
             '\.(jpg|jpeg|png|gif|bmp)$' {
                 $image = [System.Drawing.Image]::FromFile($sourcePath)
-                switch ($targetFormat) {
-                    '.jpg' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Jpeg) }
-                    '.png' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Png) }
-                    '.bmp' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Bmp) }
-                    '.gif' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Gif) }
+                
+                try {
+                    switch ($targetFormat) {
+                        '.jpg' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Jpeg) }
+                        '.png' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Png) }
+                        '.bmp' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Bmp) }
+                        '.gif' { $image.Save($targetPath, [System.Drawing.Imaging.ImageFormat]::Gif) }
+                        '.pdf' {
+                            try {
+                                # Create PDF document with proper page sizing
+                                $imageRatio = $image.Width / $image.Height
+                                $pageSize = New-Object iTextSharp.text.Rectangle(
+                                    [Math]::Min(595, $image.Width), # 595 = A4 width in points
+                                    [Math]::Min(842, $image.Height)  # 842 = A4 height in points
+                                )
+                                
+                                $document = New-Object iTextSharp.text.Document($pageSize, 0, 0, 0, 0)
+                                $writer = [iTextSharp.text.pdf.PdfWriter]::GetInstance(
+                                    $document, 
+                                    [System.IO.File]::Create($targetPath)
+                                )
+                                $document.Open()
+                                
+                                # Convert image to bytes using memory stream
+                                $ms = New-Object System.IO.MemoryStream
+                                try {
+                                    $image.Save($ms, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+                                    $imageBytes = $ms.ToArray()
+                                    
+                                    # Create PDF image and set positioning
+                                    $pdfImage = [iTextSharp.text.Image]::GetInstance($imageBytes)
+                                    
+                                    # Scale image to fit page while maintaining aspect ratio
+                                    $pdfImage.ScaleToFit($pageSize.Width, $pageSize.Height)
+                                    
+                                    # Center the image on the page
+                                    $pdfImage.SetAbsolutePosition(
+                                        ($pageSize.Width - $pdfImage.ScaledWidth) / 2,
+                                        ($pageSize.Height - $pdfImage.ScaledHeight) / 2
+                                    )
+                                    
+                                    $document.Add($pdfImage)
+                                }
+                                finally {
+                                    $ms.Dispose()
+                                }
+                            }
+                            finally {
+                                if ($document) {
+                                    $document.Close()
+                                }
+                                if ($writer) {
+                                    $writer.Close()
+                                }
+                            }
+                        }
+                    }
                 }
-                $image.Dispose()
+                finally {
+                    $image.Dispose()
+                }
             }
             
-            # PDF conversions (requires Adobe Acrobat or third-party tools)
+            # PDF conversions
             '\.pdf$' {
-                throw "PDF conversion requires additional software. Please install Adobe Acrobat or a compatible PDF converter."
+                switch ($targetFormat) {
+                    '.docx' {
+                        $word = New-Object -ComObject Word.Application
+                        
+                        try {
+                            # Configure Word for conversion
+                            $word.Visible = $true
+                            $word.DisplayAlerts = 'wdAlertsAll'
+                            
+                            # Get full paths
+                            $sourcePath = [System.IO.Path]::GetFullPath($sourcePath)
+                            $targetPath = [System.IO.Path]::GetFullPath($targetPath)
+                            
+                            # Create and show a form to keep focus
+                            $form = New-Object System.Windows.Forms.Form
+                            $form.TopMost = $true
+                            $form.ShowInTaskbar = $false
+                            $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+                            $form.Size = New-Object System.Drawing.Size(1, 1)
+                            $form.Location = New-Object System.Drawing.Point(-100, -100)
+                            $form.Show()
+                            
+                            # Add delay to allow Word to initialize
+                            Start-Sleep -Milliseconds 500
+                            
+                            # Show Word application
+                            $word.Activate()
+                            
+                            # Open document and convert
+                            $doc = $word.Documents.Open($sourcePath)
+                            Start-Sleep -Milliseconds 500  # Give time for document to open
+                            
+                            # Ensure Word window and dialogs stay in front
+                            $wordProcess = Get-Process -Name "WINWORD" | Select-Object -First 1
+                            if ($wordProcess) {
+                                # Import Windows API functions
+                                Add-Type @"
+                                    using System;
+                                    using System.Runtime.InteropServices;
+                                    public class Win32 {
+                                        [DllImport("user32.dll")]
+                                        public static extern bool SetForegroundWindow(IntPtr hWnd);
+                                        
+                                        [DllImport("user32.dll")]
+                                        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+                                    }
+"@
+                                # Force Word window to front
+                                [Win32]::SetForegroundWindow($wordProcess.MainWindowHandle)
+                            }
+                            
+                            # SaveAs2 parameters: 16 = wdFormatDocx
+                            $doc.SaveAs2($targetPath, 16)
+                            $doc.Close()
+                            
+                            # Close the temporary form
+                            $form.Close()
+                            $form.Dispose()
+                        }
+                        catch {
+                            Write-Error "PDF conversion failed: $_"
+                            throw
+                        }
+                        finally {
+                            if ($word) {
+                                # Ensure Word is properly closed
+                                $word.Quit()
+                                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null
+                                [System.GC]::Collect()
+                                [System.GC]::WaitForPendingFinalizers()
+                            }
+                        }
+                    }
+                }
             }
             
             default {
@@ -154,9 +289,7 @@ function Get-SupportedFormats {
         # PDF documents
         '\.pdf$' {
             return @(
-                [PSCustomObject]@{DisplayName="JPEG (.jpg)"; Extension=".jpg"},
-                [PSCustomObject]@{DisplayName="PNG (.png)"; Extension=".png"},
-                [PSCustomObject]@{DisplayName="Text (.txt)"; Extension=".txt"}
+                [PSCustomObject]@{DisplayName="Word Document (.docx)"; Extension=".docx"}
             )
         }
         
@@ -249,14 +382,3 @@ function Show-FormatSelectionDialog {
     }
     return $null
 }
-
-# Example usage:
-# $selectedFormat = Show-FormatSelectionDialog -filePath "C:\path\to\your\file.docx"
-# if ($selectedFormat) {
-#     $result = Convert-File -sourcePath $filePath -targetFormat $selectedFormat.Extension
-#     if ($result) {
-#         Write-Host "Conversion completed successfully"
-#     } else {
-#         Write-Host "Conversion failed"
-#     }
-# }
