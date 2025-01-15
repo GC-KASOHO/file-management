@@ -43,13 +43,10 @@ $listView.Columns.Add("Type", 100)
 $listView.Columns.Add("Last Modified", 150)
 $form.Controls.Add($listView)
 
-# Variable to store recently viewed files
-$recentFiles = @()
-
 # Function to get special folders
 function Get-SpecialFolders {
     return @(
-        @{ Name = "Home"; Path = "recent"; Icon = 2 },
+        @{ Name = "Home"; Path = $env:USERPROFILE; Icon = 2 },
         @{ Name = "Desktop"; Path = [System.Environment]::GetFolderPath("Desktop"); Icon = 1 },
         @{ Name = "Documents"; Path = [System.Environment]::GetFolderPath("MyDocuments"); Icon = 1 },
         @{ Name = "Downloads"; Path = (Join-Path $env:USERPROFILE "Downloads"); Icon = 1 },
@@ -87,46 +84,23 @@ function Populate-TreeView {
 # Function to show file details in ListView
 function Show-FileDetails {
     param($path)
-
     $listView.Items.Clear()
-    if ($path -eq "recent") {
-        # Show recent files
-        foreach ($recentFile in $recentFiles) {
-            $item = New-Object System.Windows.Forms.ListViewItem($recentFile.Name)
-            $item.SubItems.Add($recentFile.Size)
-            $item.SubItems.Add($recentFile.Type)
-            $item.SubItems.Add($recentFile.LastModified)
+    try {
+        Get-ChildItem -Path $path | ForEach-Object {
+            $item = New-Object System.Windows.Forms.ListViewItem($_.Name)
+            if ($_.PSIsContainer) {
+                $item.SubItems.Add("<DIR>")
+                $item.SubItems.Add("Folder")
+            } else {
+                $item.SubItems.Add("{0:N2} KB" -f ($_.Length / 1KB))
+                $item.SubItems.Add($_.Extension)
+            }
+            $item.SubItems.Add($_.LastWriteTime.ToString())
+            $item.Tag = $_.FullName
             $listView.Items.Add($item)
         }
-    } else {
-        try {
-            Get-ChildItem -Path $path | ForEach-Object {
-                $item = New-Object System.Windows.Forms.ListViewItem($_.Name)
-                if ($_.PSIsContainer) {
-                    $item.SubItems.Add("<DIR>")
-                    $item.SubItems.Add("Folder")
-                } else {
-                    $item.SubItems.Add("{0:N2} KB" -f ($_.Length / 1KB))
-                    $item.SubItems.Add($_.Extension)
-                }
-                $item.SubItems.Add($_.LastWriteTime.ToString())
-                $item.Tag = $_.FullName
-                $listView.Items.Add($item)
-
-                # Track recently viewed files
-                if (-not $_.PSIsContainer) {
-                    $recentFiles += @{
-                        Name = $_.Name
-                        Size = "{0:N2} KB" -f ($_.Length / 1KB)
-                        Type = $_.Extension
-                        LastModified = $_.LastWriteTime.ToString()
-                    }
-                    $recentFiles = $recentFiles | Select-Object -Unique | Select-Object -Last 10
-                }
-            }
-        } catch {
-            [System.Windows.Forms.MessageBox]::Show("Unable to access path: $path", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
-        }
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Unable to access path: $path", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
     }
 }
 

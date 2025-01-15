@@ -582,12 +582,6 @@ $springAfterAddress.Spring = $true
 $springAfterAddress.Width = 20
 $menuStrip.Items.Add($springAfterAddress)
 
-# Create a panel to hold search controls
-$searchPanel = New-Object System.Windows.Forms.Panel
-$searchPanel.Size = New-Object System.Drawing.Size(290, 27)
-$searchPanel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-$searchPanel.BackColor = [System.Drawing.Color]::White
-
 # Add search box and button to MenuStrip
 $menuStrip.Items.Add($searchBox)
 $menuStrip.Items.Add($searchButton)
