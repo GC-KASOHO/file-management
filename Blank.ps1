@@ -588,12 +588,6 @@ $searchPanel.Size = New-Object System.Drawing.Size(290, 27)
 $searchPanel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $searchPanel.BackColor = [System.Drawing.Color]::White
 
-# Add the panel to the MenuStrip using ToolStripControlHost
-$searchPanelHost = New-Object System.Windows.Forms.ToolStripControlHost($searchPanel)
-$searchPanelHost.Padding = New-Object System.Windows.Forms.Padding(0)
-$searchPanelHost.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
-$menuStrip.Items.Add($searchPanelHost)
-
 # Add search box and button to MenuStrip
 $menuStrip.Items.Add($searchBox)
 $menuStrip.Items.Add($searchButton)
