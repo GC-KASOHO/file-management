@@ -557,22 +557,12 @@ $addressBar.Add_KeyPress({
     }
 })
 
-# Create a custom container for search controls
-$searchContainer = New-Object System.Windows.Forms.ToolStripControlHost(
-    (New-Object System.Windows.Forms.Panel)
-)
-$searchContainer.Control.Size = New-Object System.Drawing.Size(290, 27)
-$searchContainer.Control.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-$searchContainer.Control.BackColor = [System.Drawing.Color]::White
-$searchContainer.Padding = New-Object System.Windows.Forms.Padding(0)
-$searchContainer.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
-
 # Create search box in MenuStrip with modified style
 $searchBox = New-Object System.Windows.Forms.ToolStripTextBox
 $searchBox.Size = New-Object System.Drawing.Size(200, 25)
 $searchBox.Name = "SearchBox"
 $searchBox.PlaceholderText = "Search..."
-$searchBox.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$searchBox.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $searchBox.Margin = New-Object System.Windows.Forms.Padding(5, 0, 0, 0)
 $searchBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
@@ -591,18 +581,6 @@ $springAfterAddress = New-Object System.Windows.Forms.ToolStripStatusLabel
 $springAfterAddress.Spring = $true
 $springAfterAddress.Width = 20
 $menuStrip.Items.Add($springAfterAddress)
-
-# Create a panel to hold search controls
-$searchPanel = New-Object System.Windows.Forms.Panel
-$searchPanel.Size = New-Object System.Drawing.Size(290, 27)
-$searchPanel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-$searchPanel.BackColor = [System.Drawing.Color]::White
-
-# Add the panel to the MenuStrip using ToolStripControlHost
-$searchPanelHost = New-Object System.Windows.Forms.ToolStripControlHost($searchPanel)
-$searchPanelHost.Padding = New-Object System.Windows.Forms.Padding(0)
-$searchPanelHost.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
-$menuStrip.Items.Add($searchPanelHost)
 
 # Add search box and button to MenuStrip
 $menuStrip.Items.Add($searchBox)
