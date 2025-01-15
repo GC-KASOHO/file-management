@@ -640,7 +640,7 @@ $quickAccessPanel.AutoSize = $false
 $quickAccessPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
                            [System.Windows.Forms.AnchorStyles]::Left
 $form.Controls.Add($quickAccessPanel)
-
+c
 # Create TreeView
 $treeView = New-Object System.Windows.Forms.TreeView
 $treeView.Size = New-Object System.Drawing.Size(250, 290)
@@ -780,6 +780,7 @@ function Hide-PreviewPanel {
 
 # Function to clear preview
 function Clear-Preview {
+    if ($pictureBox.Image -ne $null) { $pictureBox.Image.Dispose() }  # Dispose of the image if it is currently loaded in the PictureBox
     $pictureBox.Image = $null
     $pictureBox.Visible = $false
     $textPreview.Clear()
@@ -1664,39 +1665,44 @@ $menuItemPaste.Add_Click({
 })
 
 # Event handler for Delete
+# MODIFIED: Event handler for Delete - Updated to handle all file types including images
 $menuItemDelete.Add_Click({
-    if ($listView.SelectedItems.Count -gt 0) {
-        $itemCount = $listView.SelectedItems.Count
-        $confirmation = [System.Windows.Forms.MessageBox]::Show(
-            "Are you sure you want to delete $itemCount selected item$(if($itemCount -gt 1){'s'})?",
-            "Confirm Delete",
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Warning
-        )
-        
-        if ($confirmation -eq [System.Windows.Forms.DialogResult]::Yes) {
-            $successCount = 0
-            $errorCount = 0
-            
-            foreach ($selectedItem in $listView.SelectedItems) {
-                $itemPath = $selectedItem.Tag
-                try {
-                    Remove-Item -Path $itemPath -Recurse -Force -ErrorAction Stop
-                    $successCount++
-                } catch {
-                    $errorCount++
-                }
+    # Modify the deletion code to handle locked files
+    foreach ($selectedItem in $listView.SelectedItems) {
+        $itemPath = $selectedItem.Tag
+        try {
+            # Force close any open file handles
+            if ($pictureBox.Image -ne $null) {
+                $pictureBox.Image.Dispose()
+                $pictureBox.Image = $null
             }
             
-            # Show results
-            $message = "Delete operation completed:`n" +
-                      "Successfully deleted: $successCount`n" +
-                      "Errors: $errorCount"
-            [System.Windows.Forms.MessageBox]::Show($message, "Delete Complete", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            # Additional step to release file handles
+            [System.GC]::Collect()
+            [System.GC]::WaitForPendingFinalizers()
             
-            Populate-ListView -path $global:currentPath
+            # Use more aggressive file deletion with additional options
+            Remove-Item -Path $itemPath -Force -ErrorAction Stop
+            
+            # Remove the item from the ListView
+            $listView.Items.Remove($selectedItem)
+            
+            $successCount++
+        } catch {
+            try {
+                # Try alternative deletion method
+                [System.IO.File]::Delete($itemPath)
+                $listView.Items.Remove($selectedItem)
+                $successCount++
+            } catch {
+                $errorCount++
+                Write-Warning "Could not delete $itemPath : $($_.Exception.Message)"
+            }
         }
     }
+
+    # Update the ListView and status bar
+    Populate-ListView $global:currentPath
 })
 
 # Event handler for Properties
