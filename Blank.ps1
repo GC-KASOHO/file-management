@@ -5,6 +5,8 @@ Add-Type -AssemblyName System.Drawing
 # Import the conversion dialog module
 . .\ConversionDialog.ps1
 
+Import-Module .\USBStorageModule.psm1
+
 # Create a form for the File Explorer
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "PowerShell File Explorer"
