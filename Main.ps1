@@ -350,8 +350,6 @@ function Sort-ListView {
     $listView.EndUpdate()
 }
 
-
-
 # Event handlers for sort options
 $sortByName.Add_Click({
     Update-SortChecks $sortByName
