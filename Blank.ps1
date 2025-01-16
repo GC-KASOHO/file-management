@@ -5,6 +5,9 @@ Add-Type -AssemblyName System.Drawing
 # Import the conversion dialog module
 . .\ConversionDialog.ps1
 
+# Import USB Storage Module
+Import-Module .\USBStorageModule.psm1
+
 # Create a form for the File Explorer
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "PowerShell File Explorer"
@@ -89,6 +92,37 @@ $previewContent.Controls.Add($previewLabel)
 # Create MenuStrip
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
 $form.Controls.Add($menuStrip)
+
+# Create USB Devices Menu
+$usbMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+$usbMenu.Text = "USB Devices"
+
+# Create Refresh USB List menu item
+$refreshUsbList = New-Object System.Windows.Forms.ToolStripMenuItem
+$refreshUsbList.Text = "Refresh USB List"
+$refreshUsbList.Add_Click({
+    Update-USBDevicesList
+})
+
+# Create Monitor USB toggle
+$monitorUsb = New-Object System.Windows.Forms.ToolStripMenuItem
+$monitorUsb.Text = "Monitor USB Devices"
+$monitorUsb.CheckOnClick = $true
+$monitorUsb.Add_CheckedChanged({
+    if ($monitorUsb.Checked) {
+        Start-USBMonitoring
+    } else {
+        Stop-USBMonitoring
+    }
+})
+
+# Create USB device list separator
+$usbSeparator = New-Object System.Windows.Forms.ToolStripSeparator
+
+$usbMenu.DropDownItems.AddRange(@($refreshUsbList, $monitorUsb, $usbSeparator))
+
+# Add USB menu to MenuStrip (after View menu)
+$menuStrip.Items.Add($usbMenu)
 
 # Initialize navigation history
 $global:navigationHistory = New-Object System.Collections.ArrayList
@@ -316,6 +350,8 @@ function Sort-ListView {
     $listView.EndUpdate()
 }
 
+
+
 # Event handlers for sort options
 $sortByName.Add_Click({
     Update-SortChecks $sortByName
@@ -347,6 +383,119 @@ $descending.Add_Click({
     Update-DirectionChecks $false
     Sort-ListView $global:currentSortColumn $false
 })
+
+# Global variable for USB monitoring job
+$global:usbMonitorJob = $null
+
+# Function to update USB devices menu
+function Update-USBDevicesList {
+    # Clear existing device items (keep refresh, monitor, and separator)
+    while ($usbMenu.DropDownItems.Count -gt 3) {
+        $usbMenu.DropDownItems.RemoveAt(3)
+    }
+    
+    # Get USB drives
+    $usbDrives = Get-USBStorageDevices
+    
+    if ($usbDrives) {
+        foreach ($drive in $usbDrives) {
+            $deviceMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
+            $deviceName = if ($drive.VolumeName) { 
+                "$($drive.VolumeName) ($($drive.DriveLetter))" 
+            } else { 
+                $drive.DriveLetter 
+            }
+            
+            $deviceMenuItem.Text = $deviceName
+            $deviceMenuItem.Tag = $drive.DriveLetter
+            
+            # Create submenu for device operations
+            $deviceSubMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+            $deviceSubMenu.Text = "Details"
+            $deviceSubMenu.Tag = $drive
+            $deviceSubMenu.Add_Click({
+                Show-DeviceDetails $this.Tag
+            })
+            
+            $deviceMenuItem.DropDownItems.Add($deviceSubMenu)
+            
+            # Add click handler for navigation
+            $deviceMenuItem.Add_Click({
+                Navigate-To $this.Tag
+            })
+            
+            $usbMenu.DropDownItems.Add($deviceMenuItem)
+        }
+    }
+    
+    # Add "No USB devices" item if no devices found
+    if ($usbMenu.DropDownItems.Count -eq 3) {
+        $noDevicesItem = New-Object System.Windows.Forms.ToolStripMenuItem
+        $noDevicesItem.Text = "No USB devices connected"
+        $noDevicesItem.Enabled = $false
+        $usbMenu.DropDownItems.Add($noDevicesItem)
+    }
+}
+
+# Function to show device details
+function Show-DeviceDetails($device) {
+    $details = @"
+Device Information:
+------------------
+Drive Letter: $($device.DriveLetter)
+Volume Name: $($device.VolumeName)
+File System: $($device.FileSystem)
+Total Space: $($device.Size) GB
+Free Space: $($device.FreeSpace) GB
+Health Status: $($device.HealthStatus)
+"@
+    
+    [System.Windows.Forms.MessageBox]::Show(
+        $details,
+        "USB Device Details",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information
+    )
+}
+
+# Function to start USB monitoring
+function Start-USBMonitoring {
+    $global:usbMonitorJob = Start-Job -ScriptBlock {
+        Import-Module $using:PSScriptRoot\USBStorageModule.psm1
+        Start-USBMonitor -OnDeviceConnected {
+            param($device)
+            $syncHash.Form.Invoke([Action]{
+                Update-USBDevicesList
+                [System.Windows.Forms.MessageBox]::Show(
+                    "New USB device connected: $($device.VolumeName) ($($device.DriveLetter))",
+                    "USB Device Connected",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Information
+                )
+            })
+        } -OnDeviceRemoved {
+            param($device)
+            $syncHash.Form.Invoke([Action]{
+                Update-USBDevicesList
+                [System.Windows.Forms.MessageBox]::Show(
+                    "USB device removed: $($device.VolumeName) ($($device.DriveLetter))",
+                    "USB Device Removed",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Information
+                )
+            })
+        }
+    }
+}
+
+# Function to stop USB monitoring
+function Stop-USBMonitoring {
+    if ($global:usbMonitorJob) {
+        Stop-Job $global:usbMonitorJob
+        Remove-Job $global:usbMonitorJob
+        $global:usbMonitorJob = $null
+    }
+}
 
 function Show-FileExplorer {
     param (
@@ -1790,6 +1939,13 @@ Populate-TreeView
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 Populate-ListView -path $desktopPath
 
+# Initialize USB device list
+Update-USBDevicesList
+
+# Clean up USB monitoring when form closes
+$form.Add_FormClosing({
+    Stop-USBMonitoring
+})
 
 # =====================================================================================
 # =====================================================================================
