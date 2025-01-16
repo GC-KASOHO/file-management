@@ -572,7 +572,6 @@ $searchBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 $searchButton = New-Object System.Windows.Forms.ToolStripButton
 $searchButton.Text = "Search"
 $searchButton.DisplayStyle = [System.Windows.Forms.ToolStripItemDisplayStyle]::Text
-$searchButton.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
 $searchButton.Margin = New-Object System.Windows.Forms.Padding(0, 0, 5, 0)
 
 # Add controls to MenuStrip
