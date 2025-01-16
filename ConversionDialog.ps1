@@ -143,79 +143,76 @@ function Convert-File {
                 }
             }
             
-            # PDF conversions
+            # PDF conversions - Modified for better stability
             '\.pdf$' {
                 switch ($targetFormat) {
                     '.docx' {
                         $word = New-Object -ComObject Word.Application
                         
                         try {
-                            # Configure Word for conversion
-                            $word.Visible = $true
-                            $word.DisplayAlerts = 'wdAlertsAll'
+                            # Show conversion progress form
+                            $progressForm = New-Object System.Windows.Forms.Form
+                            $progressForm.Text = "Converting PDF"
+                            $progressForm.Size = New-Object System.Drawing.Size(300, 100)
+                            $progressForm.StartPosition = "CenterScreen"
+                            $progressForm.TopMost = $true
+                            
+                            $label = New-Object System.Windows.Forms.Label
+                            $label.Location = New-Object System.Drawing.Point(10, 20)
+                            $label.Size = New-Object System.Drawing.Size(280, 40)
+                            $label.Text = "Converting PDF to Word...`nPlease wait and do not close any Windows that appear."
+                            $progressForm.Controls.Add($label)
+                            
+                            # Show progress form
+                            $progressForm.Show()
+                            [System.Windows.Forms.Application]::DoEvents()
+
+                            # Configure Word
+                            $word.Visible = $false
+                            $word.DisplayAlerts = 'wdAlertsNone'
                             
                             # Get full paths
                             $sourcePath = [System.IO.Path]::GetFullPath($sourcePath)
                             $targetPath = [System.IO.Path]::GetFullPath($targetPath)
                             
-                            # Create and show a form to keep focus
-                            $form = New-Object System.Windows.Forms.Form
-                            $form.TopMost = $true
-                            $form.ShowInTaskbar = $false
-                            $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
-                            $form.Size = New-Object System.Drawing.Size(1, 1)
-                            $form.Location = New-Object System.Drawing.Point(-100, -100)
-                            $form.Show()
-                            
-                            # Add delay to allow Word to initialize
-                            Start-Sleep -Milliseconds 500
-                            
-                            # Show Word application
-                            $word.Activate()
-                            
-                            # Open document and convert
+                            # Open and convert document
                             $doc = $word.Documents.Open($sourcePath)
-                            Start-Sleep -Milliseconds 500  # Give time for document to open
+                            Start-Sleep -Milliseconds 500  # Short delay for stability
                             
-                            # Ensure Word window and dialogs stay in front
-                            $wordProcess = Get-Process -Name "WINWORD" | Select-Object -First 1
-                            if ($wordProcess) {
-                                # Import Windows API functions
-                                Add-Type @"
-                                    using System;
-                                    using System.Runtime.InteropServices;
-                                    public class Win32 {
-                                        [DllImport("user32.dll")]
-                                        public static extern bool SetForegroundWindow(IntPtr hWnd);
-                                        
-                                        [DllImport("user32.dll")]
-                                        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-                                    }
-"@
-                                # Force Word window to front
-                                [Win32]::SetForegroundWindow($wordProcess.MainWindowHandle)
-                            }
-                            
-                            # SaveAs2 parameters: 16 = wdFormatDocx
+                            # Save as DOCX (16 = wdFormatDocx)
                             $doc.SaveAs2($targetPath, 16)
                             $doc.Close()
                             
-                            # Close the temporary form
-                            $form.Close()
-                            $form.Dispose()
+                            # Success message
+                            [System.Windows.Forms.MessageBox]::Show(
+                                "Conversion completed successfully.",
+                                "Success",
+                                [System.Windows.Forms.MessageBoxButtons]::OK,
+                                [System.Windows.Forms.MessageBoxIcon]::Information
+                            )
                         }
                         catch {
                             Write-Error "PDF conversion failed: $_"
+                            [System.Windows.Forms.MessageBox]::Show(
+                                "Conversion failed: $_",
+                                "Error",
+                                [System.Windows.Forms.MessageBoxButtons]::OK,
+                                [System.Windows.Forms.MessageBoxIcon]::Error
+                            )
                             throw
                         }
                         finally {
+                            # Cleanup
                             if ($word) {
-                                # Ensure Word is properly closed
                                 $word.Quit()
-                                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word) | Out-Null
-                                [System.GC]::Collect()
-                                [System.GC]::WaitForPendingFinalizers()
+                                [System.Runtime.Interopservices.Marshal]::ReleaseComObject($word)
                             }
+                            if ($progressForm) {
+                                $progressForm.Close()
+                                $progressForm.Dispose()
+                            }
+                            [System.GC]::Collect()
+                            [System.GC]::WaitForPendingFinalizers()
                         }
                     }
                 }
