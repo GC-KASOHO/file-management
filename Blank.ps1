@@ -5,7 +5,6 @@ Add-Type -AssemblyName System.Drawing
 # Import the conversion dialog module
 . .\ConversionDialog.ps1
 
-# Import USB Storage Module
 Import-Module .\USBStorageModule.psm1
 
 # Create a form for the File Explorer
@@ -93,250 +92,224 @@ $previewContent.Controls.Add($previewLabel)
 $menuStrip = New-Object System.Windows.Forms.MenuStrip
 $form.Controls.Add($menuStrip)
 
-# Create USB Devices Menu
-$usbMenu = New-Object System.Windows.Forms.ToolStripMenuItem
-$usbMenu.Text = "USB Devices"
-
-# Create Refresh USB List menu item
-$refreshUsbList = New-Object System.Windows.Forms.ToolStripMenuItem
-$refreshUsbList.Text = "Refresh USB List"
-$refreshUsbList.Add_Click({
-    Update-USBDevicesList
-})
-
-# Create Monitor USB toggle
-$monitorUsb = New-Object System.Windows.Forms.ToolStripMenuItem
-$monitorUsb.Text = "Monitor USB Devices"
-$monitorUsb.CheckOnClick = $true
-$monitorUsb.Add_CheckedChanged({
-    if ($monitorUsb.Checked) {
-        Start-USBMonitoring
-    } else {
-        Stop-USBMonitoring
-    }
-})
-
-# Create USB device list separator
-$usbSeparator = New-Object System.Windows.Forms.ToolStripSeparator
-
-$usbMenu.DropDownItems.AddRange(@($refreshUsbList, $monitorUsb, $usbSeparator))
-
-# Add USB menu to MenuStrip (after View menu)
-$menuStrip.Items.Add($usbMenu)
-
 # Initialize navigation history
 $global:navigationHistory = New-Object System.Collections.ArrayList
 $global:currentIndex = -1
 
 # File Menu
-$fileMenu = New-Object System.Windows.Forms.ToolStripMenuItem
-$fileMenu.Text = "File"
+$fileMenu = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "File"
+$fileMenu.Text = "File" # Sets the text of the menu item to "File"
 
-$newWindow = New-Object System.Windows.Forms.ToolStripMenuItem
-$newWindow.Text = "New Window"
-$newWindow.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::N
+$newWindow = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "New Window"
+$newWindow.Text = "New Window" # Sets the text of the menu item to "New Window"
+$newWindow.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::N # Sets the shortcut keys for the menu item to Ctrl+N
 $newWindow.Add_Click({
-    Start-Process powershell -ArgumentList "-File `"$PSCommandPath`""
+    Start-Process powershell -ArgumentList "-File `"$PSCommandPath`"" # Adds a click event to start a new PowerShell process with the current script
 })
 
-$exit = New-Object System.Windows.Forms.ToolStripMenuItem
-$exit.Text = "Exit"
-$exit.ShortcutKeys = [System.Windows.Forms.Keys]::Alt -bor [System.Windows.Forms.Keys]::F4
-$exit.Add_Click({ $form.Close() })
+$exit = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "Exit"
+$exit.Text = "Exit" # Sets the text of the menu item to "Exit"
+$exit.ShortcutKeys = [System.Windows.Forms.Keys]::Alt -bor [System.Windows.Forms.Keys]::F4 # Sets the shortcut keys for the menu item to Alt+F4
+$exit.Add_Click({ $form.Close() }) # Adds a click event to close the form
 
-$fileMenu.DropDownItems.AddRange(@($newWindow, $exit))
+$fileMenu.DropDownItems.AddRange(@($newWindow, $exit)) # Adds the "New Window" and "Exit" items to the "File" menu
 
 # Edit Menu
-$editMenu = New-Object System.Windows.Forms.ToolStripMenuItem
-$editMenu.Text = "Edit"
+$editMenu = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "Edit"
+$editMenu.Text = "Edit" # Sets the text of the menu item to "Edit"
 
-$copy = New-Object System.Windows.Forms.ToolStripMenuItem
-$copy.Text = "Copy"
-$copy.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::C
+$copy = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "Copy"
+$copy.Text = "Copy" # Sets the text of the menu item to "Copy"
+$copy.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::C # Sets the shortcut keys for the menu item to Ctrl+C
 $copy.Add_Click({
-    if ($listView.SelectedItems.Count -gt 0) {
-        $paths = $listView.SelectedItems | ForEach-Object { $_.Tag }
-        [System.Windows.Forms.Clipboard]::SetText(($paths -join "`r`n"))
+    if ($listView.SelectedItems.Count -gt 0) { # Adds a click event to copy selected items from the list view to the clipboard if any items are selected
+        $paths = $listView.SelectedItems | ForEach-Object { $_.Tag } # Retrieves the paths of the selected items
+        [System.Windows.Forms.Clipboard]::SetText(($paths -join "`r`n")) # Copies the paths to the clipboard, joined by newlines
     }
 })
 
-$paste = New-Object System.Windows.Forms.ToolStripMenuItem
-$paste.Text = "Paste"
-$paste.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::V
+$paste = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "Paste"
+$paste.Text = "Paste" # Sets the text of the menu item to "Paste"
+$paste.ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::V # Sets the shortcut keys for the menu item to Ctrl+V
 $paste.Add_Click({
-    if ([System.Windows.Forms.Clipboard]::ContainsText()) {
-        $paths = [System.Windows.Forms.Clipboard]::GetText() -split "`r`n"
+    if ([System.Windows.Forms.Clipboard]::ContainsText()) { # Adds a click event to paste items from the clipboard to the current directory if the clipboard contains text
+        $paths = [System.Windows.Forms.Clipboard]::GetText() -split "`r`n" # Retrieves and splits the paths from the clipboard by newlines
         foreach ($path in $paths) {
-            if (Test-Path $path) {
-                $destination = Join-Path $global:currentPath (Split-Path $path -Leaf)
-                Copy-Item -Path $path -Destination $destination -Recurse
+            if (Test-Path $path) { # Checks if each path exists
+                $destination = Join-Path $global:currentPath (Split-Path $path -Leaf) # Joins the current path with the leaf part of the path
+                Copy-Item -Path $path -Destination $destination -Recurse # Copies the item to the destination
             }
         }
-        Populate-ListView $global:currentPath
+        Populate-ListView $global:currentPath # Refreshes the list view
     }
 })
 
-$delete = New-Object System.Windows.Forms.ToolStripMenuItem
-$delete.Text = "Delete"
-$delete.ShortcutKeys = [System.Windows.Forms.Keys]::Delete
+$delete = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "Delete"
+$delete.Text = "Delete" # Sets the text of the menu item to "Delete"
+$delete.ShortcutKeys = [System.Windows.Forms.Keys]::Delete # Sets the shortcut key for the menu item to Delete
 $delete.Add_Click({
-    if ($listView.SelectedItems.Count -gt 0) {
+    if ($listView.SelectedItems.Count -gt 0) { # Adds a click event to delete selected items from the list view if any items are selected
         $result = [System.Windows.Forms.MessageBox]::Show(
-            "Are you sure you want to delete the selected items?",
-            "Confirm Delete",
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Warning
+            "Are you sure you want to delete the selected items?", # Displays a confirmation message box
+            "Confirm Delete", # Sets the title of the message box
+            [System.Windows.Forms.MessageBoxButtons]::YesNo, # Adds Yes and No buttons to the message box
+            [System.Windows.Forms.MessageBoxIcon]::Warning # Sets the icon of the message box to a warning
         )
-        if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+        if ($result -eq [System.Windows.Forms.DialogResult]::Yes) { # If the user clicks Yes
             $listView.SelectedItems | ForEach-Object {
-                Remove-Item $_.Tag -Recurse -Force
+                Remove-Item $_.Tag -Recurse -Force # Deletes the selected items
             }
-            Populate-ListView $global:currentPath
+            Populate-ListView $global:currentPath # Refreshes the list view
         }
     }
 })
 
-$editMenu.DropDownItems.AddRange(@($copy, $paste, $delete))
+$editMenu.DropDownItems.AddRange(@($copy, $paste, $delete)) # Adds the "Copy," "Paste," and "Delete" items to the "Edit" menu
+
 
 # View Menu
-$viewMenu = New-Object System.Windows.Forms.ToolStripMenuItem
-$viewMenu.Text = "View"
+$viewMenu = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "View"
+$viewMenu.Text = "View" # Sets the text of the menu item to "View"
 
-$refresh = New-Object System.Windows.Forms.ToolStripMenuItem
-$refresh.Text = "Refresh"
-$refresh.ShortcutKeys = [System.Windows.Forms.Keys]::F5
+$refresh = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item object for "Refresh"
+$refresh.Text = "Refresh" # Sets the text of the menu item to "Refresh"
+$refresh.ShortcutKeys = [System.Windows.Forms.Keys]::F5 # Sets the shortcut key for the menu item to F5
 $refresh.Add_Click({
-    Populate-ListView $global:currentPath
-    Populate-TreeView
+    Populate-ListView $global:currentPath # Adds a click event to refresh the list view with the current path
+    Populate-TreeView # Refreshes the tree view
 })
 
-$viewMenu.DropDownItems.Add($refresh)
+$viewMenu.DropDownItems.Add($refresh) # Adds the "Refresh" item to the "View" menu
 
 # Create Sort Menu Button
-$sortMenu = New-Object System.Windows.Forms.ToolStripDropDownButton
-$sortMenu.Text = "Sort"
-$sortMenu.DisplayStyle = [System.Windows.Forms.ToolStripItemDisplayStyle]::Text
+$sortMenu = New-Object System.Windows.Forms.ToolStripDropDownButton # Creates a new drop-down button for sorting
+$sortMenu.Text = "Sort" # Sets the text of the drop-down button to "Sort"
+$sortMenu.DisplayStyle = [System.Windows.Forms.ToolStripItemDisplayStyle]::Text # Sets the display style to text
 
 # Create Sort Options Menu Items
-$sortByName = New-Object System.Windows.Forms.ToolStripMenuItem
-$sortByName.Text = "Name"
-$sortByName.Checked = $true
-$global:currentSortColumn = "Name"
-$global:sortAscending = $true
+$sortByName = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item for sorting by name
+$sortByName.Text = "Name" # Sets the text of the menu item to "Name"
+$sortByName.Checked = $true # Sets the menu item as checked by default
+$global:currentSortColumn = "Name" # Sets the global current sort column to "Name"
+$global:sortAscending = $true # Sets the global sort direction to ascending
 
-$sortByType = New-Object System.Windows.Forms.ToolStripMenuItem
-$sortByType.Text = "Type"
+$sortByType = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item for sorting by type
+$sortByType.Text = "Type" # Sets the text of the menu item to "Type"
 
-$sortByDateModified = New-Object System.Windows.Forms.ToolStripMenuItem
-$sortByDateModified.Text = "Date modified"
+$sortByDateModified = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item for sorting by date modified
+$sortByDateModified.Text = "Date modified" # Sets the text of the menu item to "Date modified"
 
-$sortBySize = New-Object System.Windows.Forms.ToolStripMenuItem
-$sortBySize.Text = "Size"
+$sortBySize = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item for sorting by size
+$sortBySize.Text = "Size" # Sets the text of the menu item to "Size"
 
 # Create Sort Direction Options
-$separator = New-Object System.Windows.Forms.ToolStripSeparator
-$ascending = New-Object System.Windows.Forms.ToolStripMenuItem
-$ascending.Text = "Ascending"
-$ascending.Checked = $true
+$separator = New-Object System.Windows.Forms.ToolStripSeparator # Creates a separator for the sort options
+$ascending = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item for ascending sort direction
+$ascending.Text = "Ascending" # Sets the text of the menu item to "Ascending"
+$ascending.Checked = $true # Sets the menu item as checked by default
 
-$descending = New-Object System.Windows.Forms.ToolStripMenuItem
-$descending.Text = "Descending"
+$descending = New-Object System.Windows.Forms.ToolStripMenuItem # Creates a new menu item for descending sort direction
+$descending.Text = "Descending" # Sets the text of the menu item to "Descending"
 
 # Add items to Sort menu
 $sortMenu.DropDownItems.AddRange(@(
-    $sortByName,
-    $sortByType,
-    $sortByDateModified,
-    $sortBySize,
-    $separator,
-    $ascending,
-    $descending
+    $sortByName, # Adds the "Name" sort option
+    $sortByType, # Adds the "Type" sort option
+    $sortByDateModified, # Adds the "Date modified" sort option
+    $sortBySize, # Adds the "Size" sort option
+    $separator, # Adds the separator
+    $ascending, # Adds the "Ascending" sort direction option
+    $descending # Adds the "Descending" sort direction option
 ))
 
 # Add Sort menu to MenuStrip (after View menu)
-$menuStrip.Items.Add($sortMenu)
+$menuStrip.Items.Add($sortMenu) # Adds the sort menu to the menu strip
 
 # Function to update sort checks
 function Update-SortChecks {
-    param($selectedItem)
+    param($selectedItem) # Takes the selected item as a parameter
     
+    # Unchecks all sort options
     $sortByName.Checked = $false
     $sortByType.Checked = $false
     $sortByDateModified.Checked = $false
     $sortBySize.Checked = $false
     
+    # Checks the selected sort option
     $selectedItem.Checked = $true
-    $global:currentSortColumn = $selectedItem.Text
+    $global:currentSortColumn = $selectedItem.Text # Sets the global current sort column to the selected item's text
 }
 
 # Function to update direction checks
 function Update-DirectionChecks {
-    param($isAscending)
+    param($isAscending) # Takes the sort direction as a parameter
     
+    # Updates the checked state of the sort direction options
     $ascending.Checked = $isAscending
     $descending.Checked = -not $isAscending
-    $global:sortAscending = $isAscending
+    $global:sortAscending = $isAscending # Sets the global sort direction
 }
 
 # Function to sort ListView items
 function Sort-ListView {
     param (
-        [string]$column,
-        [bool]$ascending
+        [string]$column, # Takes the column to sort by as a parameter
+        [bool]$ascending # Takes the sort direction as a parameter
     )
     
-    $items = @($listView.Items)
+    $items = @($listView.Items) # Gets the list view items
     
+    # Sorts the items based on the specified column and direction
     switch ($column) {
         "Name" {
             $sorted = if ($ascending) {
-                $items | Sort-Object { $_.Text }
+                $items | Sort-Object { $_.Text } # Sorts by name (ascending)
             } else {
-                $items | Sort-Object { $_.Text } -Descending
+                $items | Sort-Object { $_.Text } -Descending # Sorts by name (descending)
             }
         }
         "Type" {
             $sorted = if ($ascending) {
-                $items | Sort-Object { $_.SubItems[1].Text }
+                $items | Sort-Object { $_.SubItems[1].Text } # Sorts by type (ascending)
             } else {
-                $items | Sort-Object { $_.SubItems[1].Text } -Descending
+                $items | Sort-Object { $_.SubItems[1].Text } -Descending # Sorts by type (descending)
             }
         }
         "Date modified" {
             $sorted = if ($ascending) {
-                $items | Sort-Object { [DateTime]::Parse($_.SubItems[3].Text) }
+                $items | Sort-Object { [DateTime]::Parse($_.SubItems[3].Text) } # Sorts by date modified (ascending)
             } else {
-                $items | Sort-Object { [DateTime]::Parse($_.SubItems[3].Text) } -Descending
+                $items | Sort-Object { [DateTime]::Parse($_.SubItems[3].Text) } -Descending # Sorts by date modified (descending)
             }
         }
         "Size" {
             $sorted = if ($ascending) {
                 $items | Sort-Object {
-                    if ($_.SubItems[2].Text -eq "") { 0 }
+                    if ($_.SubItems[2].Text -eq "") { 0 } # If size is empty, treats it as 0
                     else {
                         $size = $_.SubItems[2].Text
                         switch -Regex ($size) {
-                            "(\d+\.?\d*)\s*B" { [double]$matches[1] }
-                            "(\d+\.?\d*)\s*KB" { [double]$matches[1] * 1KB }
-                            "(\d+\.?\d*)\s*MB" { [double]$matches[1] * 1MB }
-                            "(\d+\.?\d*)\s*GB" { [double]$matches[1] * 1GB }
-                            "(\d+\.?\d*)\s*TB" { [double]$matches[1] * 1TB }
-                            default { 0 }
+                            "(\d+\.?\d*)\s*B" { [double]$matches[1] } # Sorts by size in bytes
+                            "(\d+\.?\d*)\s*KB" { [double]$matches[1] * 1KB } # Sorts by size in kilobytes
+                            "(\d+\.?\d*)\s*MB" { [double]$matches[1] * 1MB } # Sorts by size in megabytes
+                            "(\d+\.?\d*)\s*GB" { [double]$matches[1] * 1GB } # Sorts by size in gigabytes
+                            "(\d+\.?\d*)\s*TB" { [double]$matches[1] * 1TB } # Sorts by size in terabytes
+                            default { 0 } # Default case
                         }
                     }
                 }
             } else {
                 $items | Sort-Object {
-                    if ($_.SubItems[2].Text -eq "") { 0 }
+                    if ($_.SubItems[2].Text -eq "") { 0 } # If size is empty, treats it as 0
                     else {
                         $size = $_.SubItems[2].Text
                         switch -Regex ($size) {
-                            "(\d+\.?\d*)\s*B" { [double]$matches[1] }
-                            "(\d+\.?\d*)\s*KB" { [double]$matches[1] * 1KB }
-                            "(\d+\.?\d*)\s*MB" { [double]$matches[1] * 1MB }
-                            "(\d+\.?\d*)\s*GB" { [double]$matches[1] * 1GB }
-                            "(\d+\.?\d*)\s*TB" { [double]$matches[1] * 1TB }
-                            default { 0 }
+                            "(\d+\.?\d*)\s*B" { [double]$matches[1] } # Sorts by size in bytes
+                            "(\d+\.?\d*)\s*KB" { [double]$matches[1] * 1KB } # Sorts by size in kilobytes
+                            "(\d+\.?\d*)\s*MB" { [double]$matches[1] * 1MB } # Sorts by size in megabytes
+                            "(\d+\.?\d*)\s*GB" { [double]$matches[1] * 1GB } # Sorts by size in gigabytes
+                            "(\d+\.?\d*)\s*TB" { [double]$matches[1] * 1TB } # Sorts by size in terabytes
+                            default { 0 } # Default case
                         }
                     }
                 } -Descending
@@ -344,170 +317,55 @@ function Sort-ListView {
         }
     }
     
-    $listView.BeginUpdate()
-    $listView.Items.Clear()
-    $listView.Items.AddRange($sorted)
-    $listView.EndUpdate()
+    $listView.BeginUpdate() # Begins updating the list view
+    $listView.Items.Clear() # Clears the current items
+    $listView.Items.AddRange($sorted) # Adds the sorted items
+    $listView.EndUpdate() # Ends updating the list view
 }
-
-
 
 # Event handlers for sort options
 $sortByName.Add_Click({
-    Update-SortChecks $sortByName
-    Sort-ListView "Name" $global:sortAscending
+    Update-SortChecks $sortByName # Calls the function to update the sort checks for "Name"
+    Sort-ListView "Name" $global:sortAscending # Sorts the ListView items by "Name" in the current sort direction
 })
 
 $sortByType.Add_Click({
-    Update-SortChecks $sortByType
-    Sort-ListView "Type" $global:sortAscending
+    Update-SortChecks $sortByType # Calls the function to update the sort checks for "Type"
+    Sort-ListView "Type" $global:sortAscending # Sorts the ListView items by "Type" in the current sort direction
 })
 
 $sortByDateModified.Add_Click({
-    Update-SortChecks $sortByDateModified
-    Sort-ListView "Date modified" $global:sortAscending
+    Update-SortChecks $sortByDateModified # Calls the function to update the sort checks for "Date modified"
+    Sort-ListView "Date modified" $global:sortAscending # Sorts the ListView items by "Date modified" in the current sort direction
 })
 
 $sortBySize.Add_Click({
-    Update-SortChecks $sortBySize
-    Sort-ListView "Size" $global:sortAscending
+    Update-SortChecks $sortBySize # Calls the function to update the sort checks for "Size"
+    Sort-ListView "Size" $global:sortAscending # Sorts the ListView items by "Size" in the current sort direction
 })
 
 # Event handlers for sort direction
 $ascending.Add_Click({
-    Update-DirectionChecks $true
-    Sort-ListView $global:currentSortColumn $true
+    Update-DirectionChecks $true # Calls the function to update the direction checks to ascending
+    Sort-ListView $global:currentSortColumn $true # Sorts the ListView items by the current sort column in ascending order
 })
 
 $descending.Add_Click({
-    Update-DirectionChecks $false
-    Sort-ListView $global:currentSortColumn $false
+    Update-DirectionChecks $false # Calls the function to update the direction checks to descending
+    Sort-ListView $global:currentSortColumn $false # Sorts the ListView items by the current sort column in descending order
 })
-
-# Global variable for USB monitoring job
-$global:usbMonitorJob = $null
-
-# Function to update USB devices menu
-function Update-USBDevicesList {
-    # Clear existing device items (keep refresh, monitor, and separator)
-    while ($usbMenu.DropDownItems.Count -gt 3) {
-        $usbMenu.DropDownItems.RemoveAt(3)
-    }
-    
-    # Get USB drives
-    $usbDrives = Get-USBStorageDevices
-    
-    if ($usbDrives) {
-        foreach ($drive in $usbDrives) {
-            $deviceMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
-            $deviceName = if ($drive.VolumeName) { 
-                "$($drive.VolumeName) ($($drive.DriveLetter))" 
-            } else { 
-                $drive.DriveLetter 
-            }
-            
-            $deviceMenuItem.Text = $deviceName
-            $deviceMenuItem.Tag = $drive.DriveLetter
-            
-            # Create submenu for device operations
-            $deviceSubMenu = New-Object System.Windows.Forms.ToolStripMenuItem
-            $deviceSubMenu.Text = "Details"
-            $deviceSubMenu.Tag = $drive
-            $deviceSubMenu.Add_Click({
-                Show-DeviceDetails $this.Tag
-            })
-            
-            $deviceMenuItem.DropDownItems.Add($deviceSubMenu)
-            
-            # Add click handler for navigation
-            $deviceMenuItem.Add_Click({
-                Navigate-To $this.Tag
-            })
-            
-            $usbMenu.DropDownItems.Add($deviceMenuItem)
-        }
-    }
-    
-    # Add "No USB devices" item if no devices found
-    if ($usbMenu.DropDownItems.Count -eq 3) {
-        $noDevicesItem = New-Object System.Windows.Forms.ToolStripMenuItem
-        $noDevicesItem.Text = "No USB devices connected"
-        $noDevicesItem.Enabled = $false
-        $usbMenu.DropDownItems.Add($noDevicesItem)
-    }
-}
-
-# Function to show device details
-function Show-DeviceDetails($device) {
-    $details = @"
-Device Information:
-------------------
-Drive Letter: $($device.DriveLetter)
-Volume Name: $($device.VolumeName)
-File System: $($device.FileSystem)
-Total Space: $($device.Size) GB
-Free Space: $($device.FreeSpace) GB
-Health Status: $($device.HealthStatus)
-"@
-    
-    [System.Windows.Forms.MessageBox]::Show(
-        $details,
-        "USB Device Details",
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Information
-    )
-}
-
-# Function to start USB monitoring
-function Start-USBMonitoring {
-    $global:usbMonitorJob = Start-Job -ScriptBlock {
-        Import-Module $using:PSScriptRoot\USBStorageModule.psm1
-        Start-USBMonitor -OnDeviceConnected {
-            param($device)
-            $syncHash.Form.Invoke([Action]{
-                Update-USBDevicesList
-                [System.Windows.Forms.MessageBox]::Show(
-                    "New USB device connected: $($device.VolumeName) ($($device.DriveLetter))",
-                    "USB Device Connected",
-                    [System.Windows.Forms.MessageBoxButtons]::OK,
-                    [System.Windows.Forms.MessageBoxIcon]::Information
-                )
-            })
-        } -OnDeviceRemoved {
-            param($device)
-            $syncHash.Form.Invoke([Action]{
-                Update-USBDevicesList
-                [System.Windows.Forms.MessageBox]::Show(
-                    "USB device removed: $($device.VolumeName) ($($device.DriveLetter))",
-                    "USB Device Removed",
-                    [System.Windows.Forms.MessageBoxButtons]::OK,
-                    [System.Windows.Forms.MessageBoxIcon]::Information
-                )
-            })
-        }
-    }
-}
-
-# Function to stop USB monitoring
-function Stop-USBMonitoring {
-    if ($global:usbMonitorJob) {
-        Stop-Job $global:usbMonitorJob
-        Remove-Job $global:usbMonitorJob
-        $global:usbMonitorJob = $null
-    }
-}
 
 function Show-FileExplorer {
     param (
         [Parameter(Position=0)]
-        [string]$Path = (Get-Location),
+        [string]$Path = (Get-Location), # Default path is the current location
         
         [Parameter()]
         [ValidateSet("ExtraLargeIcons", "LargeIcons", "MediumIcons", "SmallIcons", "List", "Details")]
-        [string]$View = "Details",
+        [string]$View = "Details", # Default view is "Details"
         
         [Parameter()]
-        [switch]$ShowHidden
+        [switch]$ShowHidden # Optional switch to show hidden files
     )
     
     # Ensure the path exists
@@ -666,19 +524,8 @@ $btnDown.Add_Click({
     }
 })
 
-$btnDown = New-Object System.Windows.Forms.ToolStripMenuItem
-$btnDown.Text = "↓"
-$btnDown.Add_Click({
-    if ($listView.SelectedItems.Count -gt 0) {
-        $selectedItem = $listView.SelectedItems[0]
-        if ($selectedItem -and (Test-Path -Path $selectedItem.Tag -PathType Container)) {
-            Navigate-To $selectedItem.Tag
-        }
-    }
-})
-
 # Add all items to MenuStrip in order
-$menuStrip.Items.AddRange(@($btnBack, $btnForward, $btnUp, $fileMenu, $sortMenu, $viewMenu, $editMenu, $viewMen ))
+$menuStrip.Items.AddRange(@($btnBack, $btnForward, $btnUp, $fileMenu, $sortMenu, $viewMenu, $editMenu))
 
 # Create address bar in MenuStrip
 $addressBar = New-Object System.Windows.Forms.ToolStripTextBox
@@ -1939,13 +1786,6 @@ Populate-TreeView
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 Populate-ListView -path $desktopPath
 
-# Initialize USB device list
-Update-USBDevicesList
-
-# Clean up USB monitoring when form closes
-$form.Add_FormClosing({
-    Stop-USBMonitoring
-})
 
 # =====================================================================================
 # =====================================================================================
